@@ -3,123 +3,143 @@ import time
 import numpy as np
 import mujoco
 import mujoco.viewer as viewer
-from IPython.display import clear_output
 
-#TODO Renderer, Camera
-
+# Set up the simulation parameters
 SIM_DURATION = 5
 MODEL_PATH = '../data/universal_robots_ur10e/scene.xml'
+INTEGRATION_DT: float = 1.0
+DAMPING: float = 1e-4
+GRAVITY_COMPENSATION: bool = True
+DT: float = 0.002
+MAX_ANGVEL = 0.0
 
-"""
-MuJoCO has mj_getState, and mj_setState. 
-"""
 
-def get_joint_values(model, data):
-    """
-    Get the joint values(qpos) from the MuJoCo data object
-    
-    Args:
-        model (mjModel): MuJoCo model object
-        data (mjData): MuJoCo data object
-    
-    Returns:
-        np.ndarray: Numpy array containing the joint values
-        
-    """
+def get_qpos(model, data):
     qpos_array = np.zeros(model.nq, dtype=np.float64)
     mujoco.mj_getState(model, data, qpos_array, mujoco.mjtState.mjSTATE_QPOS)
     
     return qpos_array
 
 
-def get_pose(model, data):
-    """
-    Get the body pose(xpos) from the MuJoCo data object
-    
-    Args:
-        model (mjModel): MuJoCo model object
-        data (mjData): MuJoCo data object
-    
-    Returns:
-        mjData.xpos: MuJoCo data object containing the body pose
-        
-    """
-
+def get_xpos_xquat(model, data):
     mujoco.mj_forward(model, data)
+    xpos = np.copy(np.reshape(data.xpos, (model.nbody, 3)))
+    xquat = np.copy(np.reshape(data.xquat, (model.nbody, 4)))
+    return xpos, xquat
 
+def get_random_target_pose(model, data):
+    target_position = np.random.uniform(-0.5, 0.5, 3)
+    target_quat = np.random.random(4)
+    target_quat /= np.linalg.norm(target_quat)
+    return target_position, target_quat
 
-    return np.copy(np.reshape(data.xpos, (model.nbody, 3)))
+def inverse_kinematics(model, data, site_id, target_position, target_quat):
+    # Pre-allocate numpy arrays.
+    jac = np.zeros((6, model.nv))
+    diag = DAMPING * np.eye(6)
+    error = np.zeros(6)
+    error_pos = error[:3]
+    error_ori = error[3:]
+    site_quat = np.zeros(4)
+    site_quat_conj = np.zeros(4)
+    error_quat = np.zeros(4)
 
-"""
-Switch over to dm control?
- https://github.com/google-deepmind/dm_control/blob/main/dm_control/utils/inverse_kinematics.py
-"""
+    error[:] = target_position - data.site(site_id).xpos
+    #TODO include Quaternion error
+    mujoco.mju_mat2Quat(site_quat, data.site(site_id).xmat)
+    mujoco.mju_negQuat(site_quat_conj, site_quat)
+    mujoco.mju_mulQuat(error_quat, target_quat, site_quat_conj)
+    mujoco.mju_quat2Vel(error_ori, error_quat, 1.0)
 
-def numerical_ik_solver(model, data, target_position, max_iterations=100, tolerance=1e-4):
-    initial_joint_values = data.qpos.copy()
-
-    def forward_kinematics(joint_values):
-        data.qpos = joint_values
-        mujoco.mj_kinematics(model, data)
-        return get_pose(data)
-
-    joint_values = initial_joint_values
-
-    for _ in range(max_iterations):
-        current_position = forward_kinematics(joint_values)
-        error = target_position - current_position
-        if np.linalg.norm(error) < tolerance:
-            break
-        
-        jacobian = mujoco.mj_jac(model, data)
-
-        joint_updates = np.linalg.pinv(jacobian) @ error
-        joint_values += joint_updates
+    mujoco.mj_jacSite(model, data, jac[:3], jac[3:], site_id)
     
-    data.qpos = joint_values
-    return joint_values
+    dq = jac.T @ np.linalg.solve(jac @ jac.T + diag, error)
 
-def main():
-    # Load the model
+    if MAX_ANGVEL > 0:
+        dq_abs_max = np.abs(dq).max()
+        if dq_abs_max > MAX_ANGVEL:
+            dq *= MAX_ANGVEL / dq_abs_max
+
+    return dq
+
+def main(): 
+    assert mujoco.__version__ >= "3.1.0", "Please upgrade to mujoco 3.1.0 or later."
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     model = mujoco.MjModel.from_xml_path(os.path.join(curr_dir, MODEL_PATH)) 
+    if not model:
+        mujoco.mju_error("Failed to load model")
+    
     data = mujoco.MjData(model)
+    if not data:
+        mujoco.mju_error("Failed to create data object")
 
-    # Test get_joint_values
-    joint_values = get_joint_values(model, data).copy()
-    print("Initial joint values: ", joint_values)
+    model.opt.timestep = DT
 
-    body_pose = get_pose(model, data)
-    print("Initial body pose: ", body_pose)
+    site_id = model.site("attachment_site").id
+    if site_id == -1:
+        raise ValueError("Site not found")
 
-    initial_joint_values = joint_values.copy()
+    body_names = [
+        "shoulder_link",
+        "upper_arm_link",
+        "forearm_link",
+        "wrist_1_link",
+        "wrist_2_link",
+        "wrist_3_link"
+    ]
 
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        viewer.cam.distance *= 2.5
+    body_ids = [model.body(name).id for name in body_names]
+    if GRAVITY_COMPENSATION:
+        model.body_gravcomp[body_ids] = 1.0
+    
+    joint_names = [
+        "shoulder_pan_joint",
+        "shoulder_lift_joint",
+        "elbow_joint",
+        "wrist_1_joint",
+        "wrist_2_joint",
+        "wrist_3_joint"
+    ]    
+
+    dof_ids = np.array([model.joint(name).id for name in joint_names])
+
+    actuator_names = [
+        "shoulder_pan",
+        "shoulder_lift",
+        "elbow",
+        "wrist_1",
+        "wrist_2",
+        "wrist_3"
+    ]    
+
+    actuator_ids = np.array([model.actuator(name).id for name in actuator_names])
+
+    key_id = model.key("home").id
+
+    with mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False) as viewer:
+    #     viewer.cam.distance *= 2.5
+        mujoco.mj_resetDataKeyframe(model, data, key_id)
+        mujoco.mjv_defaultFreeCamera(model, viewer.cam)
+        viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
 
         start = time.time()
         while viewer.is_running() and time.time() - start < SIM_DURATION:
-            step_start = time.time()
-        
+            step_start = time.time()            
+
+            target_position, target_quat = get_random_target_pose(model, data)
+            qpos = get_qpos(model, data)
+            xpos, xquat = get_xpos_xquat(model, data)
+
+            dq = inverse_kinematics(model, data, site_id, target_position, target_quat)
+
+            q = qpos.copy()
+            mujoco.mj_integratePos(model, q, dq, INTEGRATION_DT)
+
+            # Step the simulation
             mujoco.mj_step(model, data)
-
-            elapsed_time = time.time() - start
-
-            # joint_values = get_joint_values(model, data)
-            body_pose = get_pose(model, data)
-            # print(f"\nJoint values at time {elapsed_time:.2f}: {joint_values}")
-            print(f"Body pose at time {elapsed_time:.2f}: ")
-            print(body_pose)
-
-
-            # TODO: use MuJoCo's mju_add or simple mycontroller to add the joint values 
-            data.qpos = initial_joint_values + (-2 * elapsed_time / SIM_DURATION)
-
-            # with viewer.lock():
-                # viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(data.time %2) # Toggle contact points
             viewer.sync()
 
-            time_until_next_step = model.opt.timestep - (time.time() - step_start)  
+            time_until_next_step = DT - (time.time() - step_start)  
             if time_until_next_step > 0:
                 time.sleep(time_until_next_step)
 
