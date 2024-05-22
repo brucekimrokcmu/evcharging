@@ -3,6 +3,8 @@ import time
 import numpy as np
 import mujoco
 import mujoco.viewer as viewer
+from dm_control.utils import inverse_kinematics as ik
+
 
 # Set up the simulation parameters
 SIM_DURATION = 5
@@ -32,35 +34,6 @@ def get_random_target_pose(model, data):
     target_quat = np.random.random(4)
     target_quat /= np.linalg.norm(target_quat)
     return target_position, target_quat
-
-def inverse_kinematics(model, data, site_id, target_position, target_quat):
-    # Pre-allocate numpy arrays.
-    jac = np.zeros((6, model.nv))
-    diag = DAMPING * np.eye(6)
-    error = np.zeros(6)
-    error_pos = error[:3]
-    error_ori = error[3:]
-    site_quat = np.zeros(4)
-    site_quat_conj = np.zeros(4)
-    error_quat = np.zeros(4)
-
-    error[:] = target_position - data.site(site_id).xpos
-    #TODO include Quaternion error
-    mujoco.mju_mat2Quat(site_quat, data.site(site_id).xmat)
-    mujoco.mju_negQuat(site_quat_conj, site_quat)
-    mujoco.mju_mulQuat(error_quat, target_quat, site_quat_conj)
-    mujoco.mju_quat2Vel(error_ori, error_quat, 1.0)
-
-    mujoco.mj_jacSite(model, data, jac[:3], jac[3:], site_id)
-    
-    dq = jac.T @ np.linalg.solve(jac @ jac.T + diag, error)
-
-    if MAX_ANGVEL > 0:
-        dq_abs_max = np.abs(dq).max()
-        if dq_abs_max > MAX_ANGVEL:
-            dq *= MAX_ANGVEL / dq_abs_max
-
-    return dq
 
 def main(): 
     assert mujoco.__version__ >= "3.1.0", "Please upgrade to mujoco 3.1.0 or later."
@@ -130,10 +103,24 @@ def main():
             qpos = get_qpos(model, data)
             xpos, xquat = get_xpos_xquat(model, data)
 
-            dq = inverse_kinematics(model, data, site_id, target_position, target_quat)
+            #TODO: Implement inverse kinematics
+            ik_result = ik.qpos_from_site_pose(
+                physics=model,
+                site_name='attachment_site',
+                target_pos=target_position,
+                target_quat=target_quat,
+                joint_ids=dof_ids,
+                initial_joint_angles=qpos
+            )
+            if ik_result.success:
+                q = ik_result.qpos
+                dq = ik_result.qvel  
 
-            q = qpos.copy()
-            mujoco.mj_integratePos(model, q, dq, INTEGRATION_DT)
+                mujoco.mj_integratePos(model, q, dq, INTEGRATION_DT)
+
+                np.clip(q, *model.jnt_range.T, out=q)
+                data.ctrl[actuator_ids] = q[dof_ids]
+
 
             # Step the simulation
             mujoco.mj_step(model, data)
