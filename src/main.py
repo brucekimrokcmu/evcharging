@@ -16,9 +16,61 @@ def get_random_target_pose(qpos_max, qpos_min, quat):
     target_quat /= np.linalg.norm(target_quat)
     return target_pos, target_quat
 
-# TODO: implement set_site_to_xpos
-def generate_trajectory(start_pos, start_quat, target_pos, target_quat, num_waypoints=1000):
+# TODO slerp utility function for quaternion interpolation
+def slerp(q0, q1, t):
+    pass
+
+def generate_trajectory(physics, start_pos, start_quat, end_pos, end_quat, num_waypoints=100, duration=2.0):
     trajectory = []
+
+    # Linear interpolation for workspace
+    waypoint_positions = np.linspace(start_pos, end_pos, num_waypoints)
+    if start_quat is not None and end_quat is not None:
+        pass # TODO slertp interpolation for quaternions
+    else:
+        waypoint_quats = [None] * num_waypoints
+
+    # Polynomial trajectory in joint space 
+    t_start = 0.0
+    t_end = duration
+    dt = (t_end - t_start) / (num_waypoints - 1)
+
+    t_i = 0
+    t_f = duration
+    A = np.array([
+          [t_i**3, t_i**2, t_i, 1],
+          [3*t_i**2, 2*t_i, 1, 0],
+          [t_f**3, t_f**2, t_f, 1],
+          [3*t_f**2, 2*t_f, 1, 0]
+      ])
+
+    for i in range(num_waypoints):
+        t = t_start + i * dt
+
+        result  = ik.qpos_from_site_pose(
+            physics, 
+            'attachment_site', 
+            waypoint_positions[i], 
+            waypoint_quats[i])
+
+        if result.success:
+            qpos = result.qpos
+            if i == 0:
+                qi = qpos
+                dqi = np.zeros_like(qpos)
+            elif i == num_waypoints - 1:
+                qf = qpos
+                dqf = np.zeros_like(qpos)
+
+            b = np.hstack([qi, dqi, qf, dqf])
+            c = np.linalg.solve(A, b)
+
+            q_des = c[0] * t**3 + c[1] * t**2 + c[2] * t + c[3]
+            trajectory.append(q_des)
+
+        else:
+            print("IK failed at waypoint ", i)
+            break
 
     return trajectory
 
@@ -47,7 +99,6 @@ def main():
     physics.data.qpos[:] = initial_qpos
 
     test_ik(physics)
-
 
     # with mujoco.viewer.launch_passive(model=model, data=data,
     #                                   show_left_ui=False, show_right_ui=False) as viewer:
