@@ -20,59 +20,62 @@ def get_random_target_pose(qpos_max, qpos_min, quat):
 def slerp(q0, q1, t):
     pass
 
-def generate_trajectory(physics, start_pos, start_quat, end_pos, end_quat, num_waypoints=100, duration=2.0):
-    trajectory = []
+def linear_trajectory_in_workspace(start_pos, end_pos, num_waypoints=100):
+    return np.linspace(start_pos, end_pos, num=num_waypoints)
 
-    # Linear interpolation for workspace
-    waypoint_positions = np.linspace(start_pos, end_pos, num_waypoints)
-    if start_quat is not None and end_quat is not None:
-        pass # TODO slertp interpolation for quaternions
-    else:
-        waypoint_quats = [None] * num_waypoints
-
-    # Polynomial trajectory in joint space 
-    t_start = 0.0
-    t_end = duration
-    dt = (t_end - t_start) / (num_waypoints - 1)
-
-    t_i = 0
-    t_f = duration
-    A = np.array([
-          [t_i**3, t_i**2, t_i, 1],
-          [3*t_i**2, 2*t_i, 1, 0],
-          [t_f**3, t_f**2, t_f, 1],
-          [3*t_f**2, 2*t_f, 1, 0]
-      ])
-
-    for i in range(num_waypoints):
-        t = t_start + i * dt
-
-        result  = ik.qpos_from_site_pose(
-            physics, 
-            'attachment_site', 
-            waypoint_positions[i], 
-            waypoint_quats[i])
-
+def solve_ik_for_waypoints(physics, waypoints, site_name='attachment_site'):
+    joint_poses = []
+    for waypoint in waypoints:
+        result = ik.qpos_from_site_pose(
+            physics,
+            site_name,
+            waypoint,
+            target_quat=None)  
         if result.success:
-            qpos = result.qpos
-            if i == 0:
-                qi = qpos
-                dqi = np.zeros_like(qpos)
-            elif i == num_waypoints - 1:
-                qf = qpos
-                dqf = np.zeros_like(qpos)
-
-            b = np.hstack([qi, dqi, qf, dqf])
-            c = np.linalg.solve(A, b)
-
-            q_des = c[0] * t**3 + c[1] * t**2 + c[2] * t + c[3]
-            trajectory.append(q_des)
-
+            joint_poses.append(result.qpos)
         else:
-            print("IK failed at waypoint ", i)
-            break
+            print(f"IK failed at waypoint {waypoint}")
+            return None
+    return joint_poses
 
-    return trajectory
+def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=100, duration=2.0):
+    if v0 is None:
+        v0 = np.zeros_like(q0)
+    if vf is None:
+        vf = np.zeros_like(qf)
+    
+    t = np.linspace(0, duration, num=num_points)
+    
+    A = np.array([
+        [0, 0, 0, 1],
+        [0, 0, 1, 0],
+        [duration**3, duration**2, duration, 1],
+        [3*duration**2, 2*duration, 1, 0]
+    ])
+    
+    b = np.column_stack([q0, v0, qf, vf])
+    c = np.linalg.solve(A, b)
+    
+    q_des = np.einsum('i,ij->ij', t**3, c[0]) + \
+            np.einsum('i,ij->ij', t**2, c[1]) + \
+            np.einsum('i,ij->ij', t, c[2]) + c[3]
+    
+    return q_des
+
+def generate_trajectory(physics, start_pos, end_pos, num_waypoints=100, duration=2.0, site_name='attachment_site'):
+    workspace_trajectory = linear_trajectory_in_workspace(start_pos, end_pos, num_waypoints)
+    
+    joint_poses = solve_ik_for_waypoints(physics, [start_pos, end_pos], site_name)
+    if joint_poses is None:
+        print("IK failed for start or end pose.")
+        return None
+    
+    q0, qf = joint_poses[0], joint_poses[-1]
+    v0, vf = np.zeros_like(q0), np.zeros_like(qf)    
+    trajectory = cubic_polynomial_interpolation(q0, qf, v0, vf, num_points=num_waypoints, duration=duration)
+    
+    return trajectory, workspace_trajectory
+
 
 def test_ik(physics, target_pos=None, target_quat=None): 
     
