@@ -28,13 +28,13 @@ def linear_trajectory_in_workspace(start_pose, end_pose, num_waypoints=100):
 
 def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name='attachment_site'):
     
-    start_xpos, start_quat = start_pose[:3], start_pose[3:]    
+    start_xpos, start_quat = start_pose[:3], start_pose[3:]
     start_result = ik.qpos_from_site_pose(
         physics,
         site_name,
         start_xpos,
-        start_quat=start_quat)
-    
+        target_quat=None)
+    print(start_result)
     assert start_result.success, "IK failed for start pose."
 
     end_xpos, end_quat = end_pose[:3], end_pose[3:]
@@ -42,7 +42,7 @@ def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name='attachment_
         physics,
         site_name,
         end_xpos,
-        target_quat=end_quat)
+        target_quat=None)
     
     assert end_result.success, "IK failed for end pose."
     
@@ -63,13 +63,14 @@ def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=100, dur
         [3*duration**2, 2*duration, 1, 0]
     ])
     
-    b = np.column_stack([q0, v0, qf, vf])
+    b = np.transpose(np.column_stack([q0, v0, qf, vf]))
+
     c = np.linalg.solve(A, b)
-    
-    q_des = np.einsum('i,ij->ij', t**3, c[0]) + \
-            np.einsum('i,ij->ij', t**2, c[1]) + \
-            np.einsum('i,ij->ij', t, c[2]) + c[3]
-        
+
+    q_des = np.zeros((num_points, len(q0)))
+    for i in range(len(q0)):
+        q_des[:, i] = c[0, i] * t**3 + c[1, i] * t**2 + c[2, i] * t + c[3, i]
+     
     return q_des
 
 def generate_trajectory(physics, start_pose, end_pose, num_waypoints=100, duration=2.0, site_name='attachment_site'):    
@@ -94,6 +95,9 @@ def generate_trajectory(physics, start_pose, end_pose, num_waypoints=100, durati
         num_points=num_waypoints, 
         duration=duration)
     
+    assert np.allclose(start_qpos, joint_trajectory[0]), "Start pose not equal to initial joint position."
+    assert np.allclose(end_qpos, joint_trajectory[-1]), "End pose not equal to final joint position."
+
     return joint_trajectory
 
 def test_ik(physics, target_pos=None, target_quat=None): 
@@ -111,25 +115,24 @@ def test_ik(physics, target_pos=None, target_quat=None):
 
 def move_to_target(physics, target_pose, duration=2.0):
     start_xpos = physics.data.site_xpos[-1,:]
-    start_xquat = physics.data.site_quat[-1,:] # TODO: check if this is correct
+    start_xquat = physics.data.xquat[-1,:] 
     start_pose = np.concatenate([start_xpos, start_xquat])
     print("Start pose: ", start_pose)
     print("Target pose: ", target_pose)
     joint_trajectory = generate_trajectory(physics, start_pose, target_pose, duration=duration)
     
-    for qpos in joint_trajectory:
+    for i, qpos in enumerate(joint_trajectory):
         physics.data.qpos[:] = qpos
         physics.step()
         physics.render()
         time.sleep(0.01)
+        print(f"Time step {i}: {qpos}")
+        # TODO Visualization of the robot
 
 def main(): 
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     ur10e_model = os.path.join(curr_dir, '../data/universal_robots_ur10e/scene.xml')
     physics = dm_mujoco.Physics.from_xml_path(ur10e_model)
-    model = physics.model.ptr
-    data = physics.data.ptr
-
     target_pose = get_random_pose() 
     move_to_target(physics, target_pose)
 
