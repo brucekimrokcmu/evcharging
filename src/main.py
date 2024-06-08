@@ -4,7 +4,8 @@ import numpy as np
 from dm_control import mujoco as dm_mujoco
 from dm_control.mujoco.wrapper.mjbindings import mjlib, enums
 from dm_control.utils import inverse_kinematics as ik
-import mujoco.viewer 
+import glfw
+import mujoco.viewer as viewer
 
 # Set up the simulation parameters
 SIM_DURATION = 5.0
@@ -34,7 +35,6 @@ def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name='attachment_
         site_name,
         start_xpos,
         target_quat=None)
-    print(start_result)
     assert start_result.success, "IK failed for start pose."
 
     end_xpos, end_quat = end_pose[:3], end_pose[3:]
@@ -48,7 +48,8 @@ def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name='attachment_
     
     return start_result.qpos, end_result.qpos
 
-def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=100, duration=2.0):
+# TODO: adjust num_points and duration in accordance to the distance between q0 and qf
+def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=500, duration=5.0):
     if v0 is None:
         v0 = np.zeros_like(q0)
     if vf is None:
@@ -73,7 +74,7 @@ def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=100, dur
      
     return q_des
 
-def generate_trajectory(physics, start_pose, end_pose, num_waypoints=100, duration=2.0, site_name='attachment_site'):    
+def generate_trajectory(physics, start_pose, end_pose, num_waypoints=500, duration=5.0, site_name='attachment_site'):    
     """
     start_pose: np.array([x, y, z, qx, qy, qz, qw])
     end_pose: np.array([x, y, z, qx, qy, qz, qw])
@@ -110,30 +111,49 @@ def test_ik(physics, target_pos=None, target_quat=None):
         target_pos = site_xpos
     
     ik_result = ik.qpos_from_site_pose(physics, 'attachment_site', target_pos, target_quat=None)
-    print("IK result: ", ik_result)    
     return ik_result, ik_result.success
 
-def move_to_target(physics, target_pose, duration=2.0):
+def move_to_target(physics, target_pose, duration=5.0, visualize=True):
     start_xpos = physics.data.site_xpos[-1,:]
     start_xquat = physics.data.xquat[-1,:] 
     start_pose = np.concatenate([start_xpos, start_xquat])
     print("Start pose: ", start_pose)
     print("Target pose: ", target_pose)
+
     joint_trajectory = generate_trajectory(physics, start_pose, target_pose, duration=duration)
-    
-    for i, qpos in enumerate(joint_trajectory):
-        physics.data.qpos[:] = qpos
-        physics.step()
-        physics.render()
-        time.sleep(0.01)
-        print(f"Time step {i}: {qpos}")
-        # TODO Visualization of the robot
+
+    if visualize:
+        viewer_ = viewer.launch_passive (physics.model.ptr, physics.data.ptr, show_left_ui=False, show_right_ui=False)
+        for i, qpos in enumerate(joint_trajectory):
+            physics.data.qpos[:] = qpos
+            physics.step()
+            # print(f"Time step {i}: {qpos}")
+
+def set_init_pose(physics, init_pose, site_name='attachment_site'):
+    init_xpos, init_quat = init_pose[:3], init_pose[3:]
+    ik_result = ik.qpos_from_site_pose(
+            physics,
+            site_name,
+            init_xpos,
+            target_quat=None,
+            inplace=False
+            )
+    print("-----------------")   
+    print(ik_result.qpos)
+    print("-----------------")   
+    physics.data.qpos[:] = ik_result.qpos
+    physics.step()
 
 def main(): 
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     ur10e_model = os.path.join(curr_dir, '../data/universal_robots_ur10e/scene.xml')
     physics = dm_mujoco.Physics.from_xml_path(ur10e_model)
-    target_pose = get_random_pose() 
+    
+    init_pose = np.array([0.5, 0.5, 0.4, 0, 0, 0, 0]) #TODO: make this as config
+    set_init_pose(physics, init_pose)
+
+    # # target_pose = get_random_pose() 
+    target_pose = np.array([-0.5, -0.5, 0.4, 0, 0, 0, 0])
     move_to_target(physics, target_pose)
 
 if __name__ == "__main__":
