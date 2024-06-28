@@ -5,12 +5,13 @@ from dm_control import mujoco as dm_mujoco
 from dm_control.mujoco.wrapper.mjbindings import mjlib, enums
 from dm_control.utils import inverse_kinematics as ik
 import glfw
-import mujoco.viewer as viewer
+import mujoco.viewer 
 
-# Set up the simulation parameters
-SIM_DURATION = 5.0
+print_camera_config = 0
 
-def get_random_pose(qpos_max=0.5, qpos_min=-0.5):
+#TODO: explore diverse IKs - trac ik, fast ik
+
+def get_random_pose(qpos_max=1.0, qpos_min=0.1):
     random_pos = np.random.uniform(qpos_min, qpos_max, 3)
     random_quaternion = np.random.normal(0, 1, 4)
     random_quaternion /= np.linalg.norm(random_quaternion)
@@ -96,65 +97,94 @@ def generate_trajectory(physics, start_pose, end_pose, num_waypoints=500, durati
         num_points=num_waypoints, 
         duration=duration)
     
-    assert np.allclose(start_qpos, joint_trajectory[0]), "Start pose not equal to initial joint position."
-    assert np.allclose(end_qpos, joint_trajectory[-1]), "End pose not equal to final joint position."
+    assert np.allclose(start_qpos, joint_trajectory[0]), "Start qpos not equal to initial joint position."
+    assert np.allclose(end_qpos, joint_trajectory[-1]), "End qpos not equal to final joint position."
 
     return joint_trajectory
 
-def test_ik(physics, target_pos=None, target_quat=None): 
-    qpos = physics.data.qpos
-    site_xpos = physics.data.site_xpos[-1,:]
-    
-    print("Initial qpos: ", qpos)
-    print("Initial xpos: ", site_xpos)
-    if target_pos is None:
-        target_pos = site_xpos
-    
-    ik_result = ik.qpos_from_site_pose(physics, 'attachment_site', target_pos, target_quat=None)
-    return ik_result, ik_result.success
 
-def move_to_target(physics, target_pose, duration=5.0, visualize=True):
-    start_xpos = physics.data.site_xpos[-1,:]
-    start_xquat = physics.data.xquat[-1,:] 
-    start_pose = np.concatenate([start_xpos, start_xquat])
-    print("Start pose: ", start_pose)
-    print("Target pose: ", target_pose)
-
-    joint_trajectory = generate_trajectory(physics, start_pose, target_pose, duration=duration)
-
-    if visualize:
-        viewer_ = viewer.launch_passive (physics.model.ptr, physics.data.ptr, show_left_ui=False, show_right_ui=False)
-        for i, qpos in enumerate(joint_trajectory):
-            physics.data.qpos[:] = qpos
-            physics.step()
-            # print(f"Time step {i}: {qpos}")
-
-def set_init_pose(physics, init_pose, site_name='attachment_site'):
-    init_xpos, init_quat = init_pose[:3], init_pose[3:]
+def init_pose(physics, pose, site_name='attachment_site'):
+    xpos, quat = pose[:3], pose[3:]
     ik_result = ik.qpos_from_site_pose(
             physics,
             site_name,
-            init_xpos,
+            xpos,
             target_quat=None,
-            inplace=False
+            inplace=True
             )
-    print("-----------------")   
-    print(ik_result.qpos)
-    print("-----------------")   
-    physics.data.qpos[:] = ik_result.qpos
-    physics.step()
+    assert ik_result.success, "IK failed for initial pose."
 
 def main(): 
+    # Load UR10e model
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     ur10e_model = os.path.join(curr_dir, '../data/universal_robots_ur10e/scene.xml')
-    physics = dm_mujoco.Physics.from_xml_path(ur10e_model)
     
-    init_pose = np.array([0.5, 0.5, 0.4, 0, 0, 0, 0]) #TODO: make this as config
-    set_init_pose(physics, init_pose)
+    # Initialize physics and MuJoCo data structures
+    physics = dm_mujoco.Physics.from_xml_path(ur10e_model)    
+    model = physics.model.ptr
+    data = physics.data.ptr   
+    cam = mujoco.MjvCamera()
+    opt = mujoco.MjvOption()
 
-    # # target_pose = get_random_pose() 
-    target_pose = np.array([-0.5, -0.5, 0.4, 0, 0, 0, 0])
-    move_to_target(physics, target_pose)
+    # Initialize GLFW
+    glfw.init()
+    window = glfw.create_window(800, 800, "UR10e", None, None)
+    glfw.make_context_current(window)
+    glfw.swap_interval(1)
+
+    # Initialize visualization data structures
+    mujoco.mjv_defaultCamera(cam)
+    mujoco.mjv_defaultOption(opt)
+    scene = mujoco.MjvScene(model, maxgeom=10000)
+    context = mujoco.MjrContext(model, mujoco.mjtFontScale.mjFONTSCALE_150.value)
+
+    cam.azimuth = 89.83044433593757 ; cam.elevation = -89.0 ; cam.distance =  5.04038754800176
+    cam.lookat =np.array([ 0.0 , 0.0 , 0.0 ])
+
+    SIM_DUR = 10000
+    sim_time = 0
+    dt = 0.001
+
+    # Launch the viewer
+    with mujoco.viewer.launch_passive(model, data, show_left_ui=False, show_right_ui=False) as viewer:
+        # Set camera configuration
+        viewer.cam.azimuth = 89.83044433593757
+        viewer.cam.elevation = -45.0
+        viewer.cam.distance = 5.04038754800176
+        viewer.cam.lookat = np.array([0.0, 0.0, 0.5])
+
+        # Set initial pose
+        pose_start = get_random_pose() #TODO: make this as config
+        init_pose(physics, pose_start)
+
+        # Set target pose 
+        target_pose = get_random_pose()
+
+        # Generate trajectory
+        joint_trajectory = generate_trajectory(physics, pose_start, target_pose, num_waypoints=50000, duration=5.0)
+        num_steps = joint_trajectory.shape[0]
+
+        start_time = time.time()
+        step = 0
+        while viewer.is_running() and step < num_steps and time.time() - start_time < 5:
+            time_prev = sim_time
+            while (sim_time - time_prev < 1.0/60.0):
+
+                ################################################################
+                # TODO: Update the joint positions
+                if step < num_steps:
+                    data.qpos[:] = joint_trajectory[step]
+                    step += 1
+
+                ################################################################    
+                mujoco.mj_step(model, data)
+                sim_time += dt
+
+            print(f"Step: {step}, End effector position: {data.site_xpos[-1,:]}")
+            # Update the viewer
+            viewer.sync()
+
+    print("Visualization complete.")
 
 if __name__ == "__main__":
     main()
