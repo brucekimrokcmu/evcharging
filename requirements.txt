@@ -1,0 +1,4 @@
+numpy
+dm_control
+mujoco
+glfw
