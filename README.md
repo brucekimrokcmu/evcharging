@@ -1,13 +1,3 @@
 # EV charging robot project 
 ## Project Schedule 
-6/2 ik & linear interpolation
-
-6/9 planner 
-
-6/16 planner 
-
-6/23 controls
-
-
-## TODO
-Convert to Julia
+https://docs.google.com/spreadsheets/d/1oa52ZoOxO0F11vGMLg3XBW5Lv_K2EK6lJ11QXY5k7xg/edit?usp=drive_link
