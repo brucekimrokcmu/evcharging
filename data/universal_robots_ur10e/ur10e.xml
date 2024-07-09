@@ -121,6 +121,13 @@
                   <geom material="linkgray" mesh="wrist3" class="visual"/>
                   <geom class="eef_collision" pos="0 0.097 0" quat="1 1 0 0" size="0.046 0.02"/>
                   <site name="attachment_site" pos="0 0.1 0" quat="-1 1 0 0"/>
+                  <body name='rod' pos='0 0.1 0' quat='-1 1 0 0'>
+                    <inertial pos="0 0 0.1" mass="0.125" diaginertia="0.0002083 0.0002083 0.00000156"/>
+                    <joint name="rod_joint" type="hinge" axis="0 0 1" stiffness="1e6" damping="1e4"/>
+                    <geom name="rod" type="cylinder" size="0.015 0.06" pos="0 0 0.03" rgba="0.1 0.8 0.1 1"/>
+                    <site name="rod_tip" pos="0 0 0.06" size="0.005"/>
+                  </body>
+                
                 </body>
               </body>
             </body>
@@ -140,6 +147,7 @@
   </actuator>
 
   <keyframe>
-    <key name="home" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0" ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/>
+    <key name="home" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0.001 0.007" ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/>
   </keyframe>
+
 </mujoco>
