@@ -8,7 +8,7 @@ def get_random_pose(qpos_max=1.0, qpos_min=0.1):
     random_pose = np.concatenate([random_pos, random_quaternion])
     return random_pose
 
-def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name="attachment_site"):
+def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name="rod_tip"):
     start_xpos, start_quat = start_pose[:3], start_pose[3:]
     start_result = ik.qpos_from_site_pose(
         physics, site_name, start_xpos, target_quat=None
@@ -46,7 +46,7 @@ def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=500, dur
 
     return q_des
 
-def generate_trajectory(physics, start_pose, end_pose, num_waypoints=500, duration=5.0, site_name="attachment_site"):
+def generate_trajectory(physics, start_pose, end_pose, num_waypoints=500, duration=5.0, site_name="rod_tip"):
     start_qpos, end_qpos = solve_ik_for_endpoints(physics, start_pose, end_pose, site_name)
 
     assert start_qpos is not None, "IK failed for start pose."

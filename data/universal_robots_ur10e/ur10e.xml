@@ -127,7 +127,6 @@
                     <geom name="rod" type="cylinder" size="0.015 0.06" pos="0 0 0.03" rgba="0.1 0.8 0.1 1"/>
                     <site name="rod_tip" pos="0 0 0.06" size="0.005"/>
                   </body>
-                
                 </body>
               </body>
             </body>
