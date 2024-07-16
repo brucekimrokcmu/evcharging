@@ -26,15 +26,18 @@
         <general forcerange="-56 56"/>
       </default>
       <default class="visual">
-        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+        <geom type="mesh" contype="0" conaffinity="0" group="1"/>
       </default>
       <default class="collision">
-        <geom type="capsule" group="3"/>
+        <geom type="capsule" group="3" contype="1" conaffinity="1"/>
         <default class="eef_collision">
-          <geom type="cylinder"/>
+          <geom type="cylinder" contype="1" conaffinity="1"/>
         </default>
       </default>
-      <site size="0.001" rgba="0.5 0.5 0.5 0.3" group="4"/>
+      <default class="rod_collision">
+        <geom type="cylinder" group="3" contype="1" conaffinity="1"/>
+      </default>
+      <site size="0.001" rgba="0.5 0.5 0.5 0.3" group="1"/>
     </default>
   </default>
 
@@ -115,19 +118,24 @@
                 <geom class="collision" size="0.046 0.065" pos="0 0 0.05"/>
                 <geom class="collision" pos="0 0.028 0.12" quat="1 1 0 0" size="0.046 0.043"/>
                 <body name="wrist_3_link" pos="0 0 0.12">
-                  <inertial pos="0 0.092 0" quat="0 1 -1 0" mass="0.202"
-                    diaginertia="0.000204525 0.000144346 0.000144346"/>
+                  <inertial pos="0 0.15 0" quat="0 1 -1 0" mass="0.5" diaginertia="0.001 0.001 0.0005"/>
                   <joint name="wrist_3_joint" class="size2"/>
                   <geom material="linkgray" mesh="wrist3" class="visual"/>
                   <geom class="eef_collision" pos="0 0.097 0" quat="1 1 0 0" size="0.046 0.02"/>
-                  <site name="attachment_site" pos="0 0.1 0" quat="-1 1 0 0"/>
-                  <!-- TODO: fix collision between wrist3 and rod -->
-                  <body name='rod' pos='0 0.1 0' quat='-1 1 0 0'>
-                    <inertial pos="0 0 0.1" mass="0.125" diaginertia="0.0002083 0.0002083 0.00000156"/>
-                    <joint name="rod_joint" type="hinge" axis="0 0 1" stiffness="1e6" damping="1e4"/>
-                    <geom name="rod" type="cylinder" size="0.015 0.06" pos="0 0 0.03" rgba="0.1 0.8 0.1 1"/>
-                    <site name="rod_tip" pos="0 0 0.06" size="0.005"/>
-                  </body>
+                  
+                  <!-- Rod divided into multiple segments -->
+                  <geom name="rod_visual" class="visual" type="cylinder" size="0.02 0.15" pos="0 0.25 0" quat="1 1 0 0" rgba="0.1 0.8 0.1 1"/>
+                  <geom name="rod_collision_1" class="rod_collision" type="cylinder" size="0.02 0.05" pos="0 0.15 0" quat="1 1 0 0"/>
+                  <geom name="rod_collision_2" class="rod_collision" type="cylinder" size="0.02 0.05" pos="0 0.25 0" quat="1 1 0 0"/>
+                  <geom name="rod_collision_3" class="rod_collision" type="cylinder" size="0.02 0.05" pos="0 0.35 0" quat="1 1 0 0"/>
+                  
+                  <!-- Contact sensors for each segment -->
+                  <site name="rod_contact_1" pos="0 0.15 0" size="0.02"/>
+                  <site name="rod_contact_2" pos="0 0.25 0" size="0.02"/>
+                  <site name="rod_contact_3" pos="0 0.35 0" size="0.02"/>
+                  
+                  <!-- Update attachment_site to be at the tip of the rod -->
+                  <site name="attachment_site" pos="0 0.4 0" quat="1 1 0 0" size="0.01"/>
                 </body>
               </body>
             </body>
@@ -146,8 +154,14 @@
     <general class="size2" name="wrist_3" joint="wrist_3_joint"/>
   </actuator>
 
+  <sensor>
+    <touch name="rod_force_1" site="rod_contact_1"/>
+    <touch name="rod_force_2" site="rod_contact_2"/>
+    <touch name="rod_force_3" site="rod_contact_3"/>
+  </sensor>
+
   <keyframe>
-    <key name="home" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0.001 0.007" ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/>
+    <key name="home" qpos="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0" ctrl="-1.5708 -1.5708 1.5708 -1.5708 -1.5708 0"/>
   </keyframe>
 
 </mujoco>
