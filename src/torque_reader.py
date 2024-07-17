@@ -22,6 +22,7 @@ class TorqueReader:
 
     def step(self):
         mujoco.mj_step(self.model, self.data)
+        self.step_count += 1
     
     def estimate_external_torques(self):
         """
@@ -48,12 +49,15 @@ class TorqueReader:
         return dt
 
     def _compute_dynamic_effects(self):
-        dynamic_effects = self.data.qfrc_bais[:self.num_joints]
+        dynamic_effects = self.data.qfrc_bias[:self.num_joints] + self.data.qfrc_gravcomp[:self.num_joints]
         return dynamic_effects
 
     def _compute_generalized_momentum(self):
-        mujoco.mj_mulM(self.model, self.data, self.data.qM, self.data.qvel)
-        return self.data.qM[:self.num_joints]
+        momentum = np.zeros(self.num_joints)
+        mujoco.mj_mulM2(self.model, self.data, momentum, self.data.qvel)
+        momentum = momentum * momentum
+        
+        return momentum
 
     # TODO: compare with below 
     # data.joint("my_joint").qfrc_constraint + data.joint("my_joint").qfrc_smooth
