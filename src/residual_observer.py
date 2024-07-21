@@ -1,3 +1,4 @@
+import json
 import mujoco 
 from dm_control import mujoco as dm_mujoco
 import numpy as np
@@ -12,19 +13,15 @@ class ResidualObserver:
         self.config = config
         self.step_size = self.config['step_size']
         self.step_count = 0
-        self.initialize_residual_observer()
+        self._initialize_residual_observer()
 
-    def initialize_residual_observer(self):
-        self.gain_matirx = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints)) 
+    def _initialize_residual_observer(self):
+        self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints)) 
         self.residual = np.zeros(self.num_joints)
         self.integral = np.zeros(self.num_joints)
         self.prev_time = 0
-
-    def step(self):
-        mujoco.mj_step(self.model, self.data)
-        self.step_count += 1
     
-    def get_residual_observer(self, timestep):
+    def get_residual_vector(self, current_time):
         """
         Estimate external torques using residual observer method.
         Requires only proprioceptive measures (q, q_dot) and current commanded input u.
@@ -35,20 +32,34 @@ class ResidualObserver:
 
         p_dot = tau + tau_ext - alpha(q, q_dot)
         r = K[p + integral(alpha - tau - r)dt]
-        
+
+        This method should be called at each timestep of the simulation.
+
+        Args:
+            current_time (float): The current simulation time.
+
+        Returns:
+            tuple: A tuple containing:
+                - residual (np.array): The estimated external torque.
+                - integral (np.array): The current integral value.
+
         """
+        dt = current_time - self.prev_time
+        if dt <= 0:
+            return self.residual, self.integral
+
 
         B_tau = self.data.xfrc_applied # B maps the motor torques (tau) to the actuated joints
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
-        # TODO: implement integration 
-        for _ in enumerate(timestep):
-            self.integral += (alpha - B_tau - self.residual) 
+        self.integral += (alpha - B_tau - self.residual) * dt
 
         self.residual = self.gain_matirx @ (p - self.integral)
 
-        return self.residual
+        self.prev_time = current_time
+
+        return self.residual, self.integral
 
     def _compute_alpha(self):
         """
