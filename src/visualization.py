@@ -92,10 +92,10 @@ class Visualization:
                     residual_data.append(residual)
 
                     print(f"Step: {step}")
-                    print(f"End effector position: {controller.get_end_effector_position()}")
+                    # print(f"End effector position: {controller.get_end_effector_position()}")
                     print(f"Control signals (data.ctrl): {ctrl}")
-                    print(f"Joint velocities (qvel): {qvel}")
-                    print(f"Residual: {residual}")
+                    # print(f"Joint velocities (qvel): {qvel}")
+                    # print(f"Residual: {residual}")
                     print("---")
                     
                     step += 1
