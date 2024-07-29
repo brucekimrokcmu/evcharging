@@ -1,5 +1,6 @@
 import json
 import os
+import numpy as np
 from ur10e_controller import UR10eController
 from trajectory_generator import generate_trajectory, get_random_pose
 from visualization import Visualization
@@ -14,20 +15,18 @@ def main():
 
     controller = UR10eController(ur10e_model)
     
-    pose_start = get_random_pose()
-    controller.init_pose(pose_start)
-
+    start_pose = get_random_pose()
     target_pose = get_random_pose()
-
+    controller.init_pose(start_pose)
+    
     duration = 5.0
     joint_trajectory = generate_trajectory(
-        controller.physics, pose_start, target_pose, num_waypoints=500, duration=duration
+        controller.physics, start_pose, target_pose, num_waypoints=500, duration=duration
     )
 
+    observer = ResidualObserver(ur10e_model, config)
     visualizer = Visualization()
-
-    visualizer.visualize_trajectory(controller, joint_trajectory, duration)
-
+    visualizer.visualize_residual_observer(controller, joint_trajectory, observer, duration)
 
 
 if __name__ == "__main__":

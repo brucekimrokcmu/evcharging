@@ -14,14 +14,14 @@ def main():
 
     controller = UR10eController(ur10e_model)
     
-    pose_start = get_random_pose()
-    controller.init_pose(pose_start)
+    start_pose = get_random_pose()
+    controller.init_pose(start_pose)
 
     target_pose = get_random_pose()
 
     duration = 5.0
     joint_trajectory = generate_trajectory(
-        controller.physics, pose_start, target_pose, num_waypoints=500, duration=duration
+        controller.physics, start_pose, target_pose, num_waypoints=500, duration=duration
     )
 
     visualizer = Visualization()

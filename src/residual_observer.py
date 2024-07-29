@@ -21,7 +21,7 @@ class ResidualObserver:
         self.integral = np.zeros(self.num_joints)
         self.prev_time = 0
     
-    def get_residual_vector(self, current_time):
+    def get_residual(self, current_time):
         """
         Estimate external torques using residual observer method.
         Requires only proprioceptive measures (q, q_dot) and current commanded input u.
@@ -53,6 +53,12 @@ class ResidualObserver:
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
+
+        print("alpha shape:", alpha.shape)
+        print("B_tau shape:", B_tau.shape)
+        print("self.residual shape:", self.residual.shape)
+        print("self.integral shape:", self.integral.shape)
+
         self.integral += (alpha - B_tau - self.residual) * dt
 
         self.residual = self.gain_matirx @ (p - self.integral)
@@ -80,26 +86,25 @@ class ResidualObserver:
         M_neg = np.zeros((self.num_joints, self.num_joints))
 
         q[i] += eps
-        mujoco.mj_setState(self.model, self.data, q)
+        mujoco.mj_setState(self.model, self.data, np.array(q).reshape(-1, 1), mujoco.mjtState.mjSTATE_QPOS)
         mujoco.mj_forward(self.model, self.data)
         mujoco.mj_fullM(self.model, M_pos, self.data.qM)
         
         q[i] -= 2 * eps
-        mujoco.mj_setState(self.model, self.data, q)
+        mujoco.mj_setState(self.model, self.data, np.array(q).reshape(-1, 1), mujoco.mjtState.mjSTATE_QPOS)
         mujoco.mj_forward(self.model, self.data)
         mujoco.mj_fullM(self.model, M_neg, self.data.qM)
         
         q[i] += eps
-        mujoco.mj_setState(self.model, self.data, q)
+        mujoco.mj_setState(self.model, self.data, np.array(q).reshape(-1, 1), mujoco.mjtState.mjSTATE_QPOS)
         mujoco.mj_forward(self.model, self.data)
 
         dM_dqi = (M_pos - M_neg) / (2 * eps)
         
         return dM_dqi
 
-    def _compute_generalized_momentum(self):
+    def _compute_generalized_momentum(self):        
         momentum = np.zeros(self.num_joints)
-        mujoco.mj_fullM(self.model, self.data, momentum, self.data.qM)
         mujoco.mj_mulM(self.model, self.data, momentum, self.data.qvel)
-        
+
         return momentum

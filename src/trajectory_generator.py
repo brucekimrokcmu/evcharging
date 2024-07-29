@@ -52,6 +52,8 @@ def cubic_polynomial_interpolation(q0, qf, v0=None, vf=None, num_points=500, dur
 
     return q_des
 
+# TODO: simple linear interpolated trajectory leads robot to penetrate to ground. i.e no collisoin check!
+
 def generate_trajectory(physics, start_pose, end_pose, num_waypoints=500, duration=5.0, site_name="rod_tip"):
     start_qpos, end_qpos = solve_ik_for_endpoints(physics, start_pose, end_pose, site_name)
 
