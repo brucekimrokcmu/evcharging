@@ -1,22 +1,28 @@
 import numpy as np
 from dm_control.utils import inverse_kinematics as ik
+from mujoco import mju_rotVecQuat, mju_axisAngle2Quat, mju_mulQuat
 
 def get_random_pose(qpos_max=1.0, qpos_min=0.1):
     random_pos = np.random.uniform(qpos_min, qpos_max, 3)
-    random_quaternion = np.random.normal(0, 1, 4)
-    random_quaternion /= np.linalg.norm(random_quaternion)
+
+    axis = np.random.randn(3)
+    axis /= np.linalg.norm(axis)
+    angle = np.random.uniform(0, 2 * np.pi)
+    random_quaternion = np.zeros(4)
+    mju_axisAngle2Quat(random_quaternion, axis, angle)
+
     random_pose = np.concatenate([random_pos, random_quaternion])
     return random_pose
 
 def solve_ik_for_endpoints(physics, start_pose, end_pose, site_name="rod_tip"):
     start_xpos, start_quat = start_pose[:3], start_pose[3:]
     start_result = ik.qpos_from_site_pose(
-        physics, site_name, start_xpos, target_quat=None
+        physics, site_name, start_xpos, target_quat=start_quat
     )
     assert start_result.success, "IK failed for start pose."
 
     end_xpos, end_quat = end_pose[:3], end_pose[3:]
-    end_result = ik.qpos_from_site_pose(physics, site_name, end_xpos, target_quat=None)
+    end_result = ik.qpos_from_site_pose(physics, site_name, end_xpos, target_quat=end_quat)
     assert end_result.success, "IK failed for end pose."
 
     return start_result.qpos, end_result.qpos
