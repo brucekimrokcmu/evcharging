@@ -1,6 +1,6 @@
 import json
 import os
-from ur10e_controller import UR10eController
+from controller import UR10eController
 from trajectory_generator import generate_trajectory, get_random_pose
 from visualization import Visualization
 from residual_observer import ResidualObserver

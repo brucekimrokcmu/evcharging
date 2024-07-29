@@ -93,9 +93,10 @@ class Visualization:
 
                     print(f"Step: {step}")
                     # print(f"End effector position: {controller.get_end_effector_position()}")
-                    print(f"Control signals (data.ctrl): {ctrl}")
+                    # print(f"Control signals (data.ctrl): {ctrl}")
+                    print(f"Control action: {controller.data.qfrc_applied}")
                     # print(f"Joint velocities (qvel): {qvel}")
-                    # print(f"Residual: {residual}")
+                    print(f"Residual: {residual}")
                     print("---")
                     
                     step += 1
