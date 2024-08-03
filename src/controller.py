@@ -20,7 +20,7 @@ class UR10eController:
         self.integral = np.zeros(self.model.nv)
         self.dt = self.model.opt.timestep
 
-    def init_pose(self, pose, site_name="rod_tip"):
+    def init_pose(self, pose, site_name="rod_contact"):
         xpos, quat = pose[:3], pose[3:]
         ik_result = ik.qpos_from_site_pose(
             self.physics, site_name, xpos, target_quat=quat, inplace=True

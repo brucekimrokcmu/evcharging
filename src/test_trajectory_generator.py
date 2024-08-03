@@ -6,13 +6,13 @@ from visualization import Visualization
 from residual_observer import ResidualObserver
 
 def main():
-    with open('config.json', 'r') as config_file:
-        config = json.load(config_file)
+
 
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     ur10e_model = os.path.join(curr_dir, "../data/universal_robots_ur10e/scene.xml")
+    config_path = os.path.join(curr_dir, "./config.json")
 
-    controller = UR10eController(ur10e_model)
+    controller = UR10eController(ur10e_model, config_path)
     
     start_pose = get_random_pose()
     controller.init_pose(start_pose)
