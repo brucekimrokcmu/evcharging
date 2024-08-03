@@ -7,7 +7,7 @@ print("Starting the script execution...")
 
 try:
     radius = 0.02
-    length = 0.3
+    length = 0.15
     filename = "rod.obj"
 
     print("Creating a new document...")
