@@ -30,6 +30,9 @@ class UR10eController:
     def set_joint_positions(self, qpos):
         self.data.qpos[:] = qpos
 
+    def forward(self):
+        mujoco.mj_forward(self.model, self.data)
+
     def step(self):
         mujoco.mj_step(self.model, self.data)
 
