@@ -56,18 +56,10 @@ class ResidualObserver:
             return self.residual, self.integral
 
 
-        # B_tau = self.data.xfrc_applied # B maps the motor torques (tau) to the actuated joints
-        tau = self.data.qfrc_applied # B maps the motor torques (tau) to the actuated joints
+        tau = self.data.qfrc_actuator 
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
-        # print("alpha shape:", alpha.shape)
-        # print("B_tau shape:", B_tau.shape)
-        # print("tau shape:", tau.shape)
-        # print("self.residual shape:", self.residual.shape)
-        # print("self.integral shape:", self.integral.shape)
-
-        # self.integral += (alpha - B_tau - self.residual) * dt
         self.integral += (alpha - tau - self.residual) * dt
 
         self.residual = self.gain_matrix @ (p - self.integral)
