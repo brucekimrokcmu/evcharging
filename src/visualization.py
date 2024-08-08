@@ -199,31 +199,34 @@ class Visualization:
 
                 if elapsed_time >= step * step_duration:
                     if step < num_steps:
-                        controller.set_joint_positions(joint_trajectory[step])
+                        desired_qpos = joint_trajectory[step]
+                        actual_qpos = controller.data.qpos
+                        torques = controller.compute_pid_torques(desired_qpos, actual_qpos)
+                        controller.data.ctrl = torques
+                        controller.forward()
+                        controller.step()
+
                         print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
-                        step += 1
 
-                    # Step the simulation
-                    controller.step()
 
-                    ctrl = controller.data.ctrl.copy()
-                    qvel = controller.data.qvel.copy()
-                    residual, _ = observer.get_residual(controller.get_time())
-                   
-                    time_steps.append(elapsed_time)
-                    ctrl_data.append(ctrl)
-                    qvel_data.append(qvel)
-                    residual_data.append(residual)
-
-                    print(f"Step: {step}")
-                    # print(f"End effector position: {controller.get_end_effector_position()}")
-                    # print(f"Control signals (data.ctrl): {ctrl}")
-                    print(f"Control action: {controller.data.qfrc_applied}")
-                    # print(f"Joint velocities (qvel): {qvel}")
-                    print(f"Residual: {residual}")
-                    print("---")
+                        ctrl = controller.data.ctrl.copy()
+                        qvel = controller.data.qvel.copy()
+                        residual, _ = observer.get_residual(controller.get_time())
                     
-                    step += 1
+                        time_steps.append(elapsed_time)
+                        ctrl_data.append(ctrl)
+                        qvel_data.append(qvel)
+                        residual_data.append(residual)
+
+                        print(f"Step: {step}")
+                        # print(f"End effector position: {controller.get_end_effector_position()}")
+                        # print(f"Control signals (data.ctrl): {ctrl}")
+                        print(f"Applied general force:  {controller.data.qfrc_applied}")
+                        # print(f"Joint velocities (qvel): {qvel}")
+                        print(f"Residual: {residual}")
+                        print("---")
+                        
+                        step += 1
 
                 # Update the viewer
                 if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
