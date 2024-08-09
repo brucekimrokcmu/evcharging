@@ -210,7 +210,7 @@ class Visualization:
 
                         residual, _ = observer.get_residual(controller.get_time())
 
-                        print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
+                        # print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
 
                         ctrl = controller.data.ctrl.copy()
                         qvel = controller.data.qvel.copy()
@@ -233,11 +233,11 @@ class Visualization:
                         data.joint("my_joint").qfrc_constraint + data.joint("my_joint").qfrc_smooth
                         """
 
-                        # print(f"External force:  {external_wo_actuator}")
+                        print(f"External force:  {external_wo_actuator}")
                         # print(f"Joint velocities (qvel): {qvel}")
-                        print(f"qfrc_actuator: {controller.data.qfrc_actuator}")
+                        # print(f"qfrc_actuator: {controller.data.qfrc_actuator}")
                         print(f"Residual: {residual}")
-                        print("---")                        
+                        # print("---")                        
                         step += 1
 
                 # Update the viewer

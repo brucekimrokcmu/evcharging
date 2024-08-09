@@ -4,8 +4,8 @@ from dm_control import mujoco as dm_mujoco
 import numpy as np
 
 class ResidualObserver:
-    def __init__(self, model_path, config_path):
-        self.physics = dm_mujoco.Physics.from_xml_path(model_path)
+    def __init__(self, physics, config_path):
+        self.physics = physics
         self.model = self.physics.model.ptr
         self.data = self.physics.data.ptr
         self.num_joints = self.model.nv
@@ -14,10 +14,6 @@ class ResidualObserver:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         
-        # Debugging: Print the type of self.config
-        print(f"Config loaded: {self.config}")
-        print(f"Type of config: {type(self.config)}")
-
         self.step_size = self.config['step_size']
         self.step_count = 0
         self._initialize_residual_observer()
@@ -56,7 +52,8 @@ class ResidualObserver:
             return self.residual, self.integral
 
 
-        tau = self.data.qfrc_actuator 
+        tau = self.data.qfrc_actuator
+        print(f"tau: {tau}") 
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 

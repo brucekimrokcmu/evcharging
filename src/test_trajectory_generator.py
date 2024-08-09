@@ -4,13 +4,17 @@ from controller import UR10eController
 from trajectory_generator import generate_trajectory, get_random_pose
 from visualization import Visualization
 from residual_observer import ResidualObserver
+from dm_control import mujoco as dm_mujoco
+
 
 def main():
     curr_dir = os.path.dirname(os.path.abspath(__file__))
-    ur10e_model = os.path.join(curr_dir, "../data/universal_robots_ur10e/scene.xml")
+    model_path = os.path.join(curr_dir, "../data/universal_robots_ur10e/scene.xml")
     config_path = os.path.join(curr_dir, "./config.json")
 
-    controller = UR10eController(ur10e_model, config_path)
+    physics = dm_mujoco.Physics.from_xml_path(model_path)
+
+    controller = UR10eController(physics, config_path)
     
     start_pose = get_random_pose()
     controller.init_pose(start_pose)

@@ -5,10 +5,10 @@ import numpy as np
 import json
 
 class UR10eController:
-    def __init__(self, model_path, config_path):
-        self.physics = dm_mujoco.Physics.from_xml_path(model_path)
-        self.model = self.physics.model.ptr
-        self.data = self.physics.data.ptr
+    def __init__(self, physics, config_path):
+        self.physics = physics
+        self.model = physics.model.ptr
+        self.data = physics.data.ptr
 
         with open(config_path, 'r') as f:
             config = json.load(f)
