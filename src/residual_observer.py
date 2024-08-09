@@ -53,7 +53,6 @@ class ResidualObserver:
 
 
         tau = self.data.qfrc_actuator
-        print(f"tau: {tau}") 
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 

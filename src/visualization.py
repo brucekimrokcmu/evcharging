@@ -216,7 +216,7 @@ class Visualization:
                         qvel = controller.data.qvel.copy()
 
                         # external_wo_actuator = controller.data.qfrc_inverse - controller.data.qfrc_actuator 
-                        external_wo_actuator = controller.data.qfrc_constraint #- controller.data.qfrc_smooth 
+                        external_wo_actuator = controller.data.qfrc_constraint # + controller.data.qfrc_smooth 
 
                         time_steps.append(elapsed_time)
                         ctrl_data.append(ctrl)
