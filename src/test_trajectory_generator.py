@@ -6,8 +6,6 @@ from visualization import Visualization
 from residual_observer import ResidualObserver
 
 def main():
-
-
     curr_dir = os.path.dirname(os.path.abspath(__file__))
     ur10e_model = os.path.join(curr_dir, "../data/universal_robots_ur10e/scene.xml")
     config_path = os.path.join(curr_dir, "./config.json")
@@ -27,8 +25,6 @@ def main():
     visualizer = Visualization()
 
     visualizer.visualize_trajectory(controller, joint_trajectory, duration)
-
-
 
 if __name__ == "__main__":
     main()

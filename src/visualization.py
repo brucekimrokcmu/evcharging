@@ -35,7 +35,7 @@ class Visualization:
                         step += 1
 
                     # Step the simulation
-                    controller.step()
+                        controller.step()
 
                 # Update the viewer
                 if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
