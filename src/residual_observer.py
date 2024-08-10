@@ -1,6 +1,5 @@
 import json
 import mujoco 
-from dm_control import mujoco as dm_mujoco
 import numpy as np
 
 class ResidualObserver:
