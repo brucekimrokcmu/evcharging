@@ -1,11 +1,10 @@
 import json
 import mujoco 
-from dm_control import mujoco as dm_mujoco
 import numpy as np
 
 class ResidualObserver:
-    def __init__(self, model_path, config_path):
-        self.physics = dm_mujoco.Physics.from_xml_path(model_path)
+    def __init__(self, physics, config_path):
+        self.physics = physics
         self.model = self.physics.model.ptr
         self.data = self.physics.data.ptr
         self.num_joints = self.model.nv
@@ -14,10 +13,6 @@ class ResidualObserver:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         
-        # Debugging: Print the type of self.config
-        print(f"Config loaded: {self.config}")
-        print(f"Type of config: {type(self.config)}")
-
         self.step_size = self.config['step_size']
         self.step_count = 0
         self._initialize_residual_observer()
@@ -56,18 +51,10 @@ class ResidualObserver:
             return self.residual, self.integral
 
 
-        # B_tau = self.data.xfrc_applied # B maps the motor torques (tau) to the actuated joints
-        tau = self.data.qfrc_applied # B maps the motor torques (tau) to the actuated joints
+        tau = self.data.qfrc_actuator
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
-        # print("alpha shape:", alpha.shape)
-        # print("B_tau shape:", B_tau.shape)
-        # print("tau shape:", tau.shape)
-        # print("self.residual shape:", self.residual.shape)
-        # print("self.integral shape:", self.integral.shape)
-
-        # self.integral += (alpha - B_tau - self.residual) * dt
         self.integral += (alpha - tau - self.residual) * dt
 
         self.residual = self.gain_matrix @ (p - self.integral)

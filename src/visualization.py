@@ -35,7 +35,7 @@ class Visualization:
                         step += 1
 
                     # Step the simulation
-                    controller.step()
+                        controller.step()
 
                 # Update the viewer
                 if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
@@ -178,6 +178,7 @@ class Visualization:
         time_steps = []
         ctrl_data = []
         qvel_data = []
+        external_data = []
         residual_data = []
 
         with mujoco.viewer.launch_passive(
@@ -203,29 +204,40 @@ class Visualization:
                         actual_qpos = controller.data.qpos
                         torques = controller.compute_pid_torques(desired_qpos, actual_qpos)
                         controller.data.ctrl = torques
+
                         controller.forward()
                         controller.step()
 
-                        print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
+                        residual, _ = observer.get_residual(controller.get_time())
 
+                        # print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
 
                         ctrl = controller.data.ctrl.copy()
                         qvel = controller.data.qvel.copy()
-                        residual, _ = observer.get_residual(controller.get_time())
-                    
+
+                        # external_wo_actuator = controller.data.qfrc_inverse - controller.data.qfrc_actuator 
+                        external_wo_actuator = controller.data.qfrc_constraint # + controller.data.qfrc_smooth 
+
                         time_steps.append(elapsed_time)
                         ctrl_data.append(ctrl)
                         qvel_data.append(qvel)
                         residual_data.append(residual)
+                        external_data.append(external_wo_actuator)
 
-                        print(f"Step: {step}")
+
                         # print(f"End effector position: {controller.get_end_effector_position()}")
                         # print(f"Control signals (data.ctrl): {ctrl}")
-                        print(f"Applied general force:  {controller.data.qfrc_applied}")
-                        # print(f"Joint velocities (qvel): {qvel}")
-                        print(f"Residual: {residual}")
-                        print("---")
                         
+                        """
+                        # TODO:  qfrc_external = qfrc_inverse - qfrc_applied - jac_xfrc - qfrc_actuator
+                        data.joint("my_joint").qfrc_constraint + data.joint("my_joint").qfrc_smooth
+                        """
+
+                        print(f"External force:  {external_wo_actuator}")
+                        # print(f"Joint velocities (qvel): {qvel}")
+                        # print(f"qfrc_actuator: {controller.data.qfrc_actuator}")
+                        print(f"Residual: {residual}")
+                        # print("---")                        
                         step += 1
 
                 # Update the viewer
@@ -239,3 +251,26 @@ class Visualization:
                     time.sleep(time_to_sleep)
 
         print("Visualization complete.")
+        # Plot the residual and external constraint force for each joint
+        num_joints = controller.model.nv
+        fig, axs = plt.subplots(num_joints, 2, figsize=(18, 6 * num_joints))
+
+        for i in range(num_joints):
+            # Plot residual
+            axs[i, 0].plot(time_steps, [residual[i] for residual in residual_data], label='Residual')
+            axs[i, 0].set_xlabel('Time (s)')
+            axs[i, 0].set_ylabel('Residual')
+            axs[i, 0].set_title(f'Residual for Joint {i}')
+            axs[i, 0].legend()
+            axs[i, 0].grid()
+
+            # Plot external constraint force
+            axs[i, 1].plot(time_steps, [ext[i] for ext in external_data], label='External Force w/o actuator')
+            axs[i, 1].set_xlabel('Time (s)')
+            axs[i, 1].set_ylabel('External Force w/o actuator')
+            axs[i, 1].set_title(f'External Force w/o actuator for Joint {i}')
+            axs[i, 1].legend()
+            axs[i, 1].grid()
+
+        plt.tight_layout()
+        plt.show()

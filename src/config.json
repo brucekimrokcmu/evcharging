@@ -3,5 +3,7 @@
     "diagonal_gain": 1.0,
     "kp": 150.0,
     "ki": 13.0,
-    "kd": 0.8
+    "kd": 0.8,
+    "number_of_particles" : 50,
+    "friction_coefficient" : 1.0
 }
