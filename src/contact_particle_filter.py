@@ -34,6 +34,7 @@ class ContactParticleFilter:
         indices_new = np.zeros(self.nop, dtype=int)
 
         normals = self.face_normals[self.indices_in_mesh]
+        print(normals)
         random_component = np.random.randn(self.nop, 3) * 0.001
         random_component += normals * 0.1
         points_new_floating = self.particles + random_component
@@ -76,8 +77,9 @@ class ContactParticleFilter:
         :return: A tuple containing the sampled points and the corresponding triangle indices.
         """
         points_new, mesh_indices_new = self.mesh.sample(self.nop, return_index=True)
-        
-        return points_new, mesh_indices_new
+        self.particles, self.indices_in_mesh = points_new, mesh_indices_new
+
+        # return points_new, mesh_indices_new
 
     def update_end_effector_pose(self):
         self.end_effector_pose = self.data.site_xpos.copy()
