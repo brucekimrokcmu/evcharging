@@ -14,7 +14,8 @@ def main():
 
     physics = dm_mujoco.Physics.from_xml_path(model_path)
 
-    # Initialize the ContactParticleFilter
+    
+    residual_observer = ResidualObserver(physics, config_path)
     contact_particle_filter = ContactParticleFilter(physics, config_path)
 
     controller = UR10eController(physics, config_path)

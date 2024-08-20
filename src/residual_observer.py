@@ -58,7 +58,6 @@ class ResidualObserver:
         self.integral += (alpha - tau - self.residual) * dt
 
         self.residual = self.gain_matrix @ (p - self.integral)
-
         self.prev_time = current_time
 
         return self.residual, self.integral
