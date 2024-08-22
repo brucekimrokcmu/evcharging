@@ -19,7 +19,7 @@ class ContactParticleFilter:
 
         self.nop = self.config['number_of_particles']      
         self.friction_coefficient = self.config["friction_coefficient"]
-        self.epsilon_bar = self.config['epsilon_bar']  # Threshold for contact detection
+        self.contact_thres = self.config['contact_thres']  # Threshold for contact detection
     
         # mesh path
         # TODO: change mesh path to pkg_path + mesh_relative_path_config
@@ -107,12 +107,12 @@ class ContactParticleFilter:
         self.particles_mesh_frame = np.zeros((self.nop,3))
 
     def run_contact_particle_filter(self, current_time):
-        # if epsilon(t) = γ(t)T Σ^−1_meas γ(t) < epsilon_bar:
+        # if epsilon(t) = γ(t)T Σ^−1_meas γ(t) < contact_thres:
         #     Xt = ∅
         #     return Xt
-        gamma_t, _ = self.residual.get_residual(current_time)
+        gamma_t, _ = self.residual.get_residual(current_time) 
 
-        if gamma_t @ self.Sigma_meas_inv @ gamma_t.T < self.epsilon_bar: # No contact # TODO: Check if this is correct: need a test script
+        if gamma_t.T @ self.Sigma_meas_inv @ gamma_t < self.contact_thres: # TODO: adjust contact_threshold
             self.set_particles_to_zero()
             return
         
