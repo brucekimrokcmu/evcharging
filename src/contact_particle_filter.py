@@ -3,9 +3,8 @@ import mujoco
 import numpy as np
 import trimesh
 from residual_observer import ResidualObserver
-import osqp
-import utils
-from utils import *
+from scipy.spatial.transform import Rotation as R
+
 
 class ContactParticleFilter:
     def __init__(self, physics, config_path):
@@ -26,7 +25,16 @@ class ContactParticleFilter:
         mesh_path = "/home/brucekimrok/RoboticsProjects/evcharging_ws/data/universal_robots_ur10e/assets/rod.obj"
         self.mesh = trimesh.load(mesh_path)
         self.face_normals = self.mesh.face_normals.copy()  
-    
+
+        # Get the body ID for the rod (assuming it's attached to wrist_3_link)
+        self.rod_body_id = self.model.body_name2id('wrist_3_link')
+
+        # Get the mesh-to-rod transform from the XML
+        self.mesh_to_rod_pos = np.array([0, 0.27, 0])
+        self.mesh_to_rod_rot = R.from_quat([1, 1, 0, 0]).as_matrix()
+
+
+
         self.residual = ResidualObserver(self.physics, config_path)
 
         self.Sigma_meas = np.eye(6)
@@ -45,16 +53,21 @@ class ContactParticleFilter:
         """
         points_new, mesh_indices_new = self.mesh.sample(self.nop, return_index=True)
         self.particles_mesh_frame, self.indices_mesh_frame = points_new, mesh_indices_new
+    
+    def from_mesh_to_world_frame(self):
+        # First, transform from mesh frame to rod frame
+        particles_rod_frame = np.dot(self.particles_mesh_frame, self.mesh_to_rod_rot.T) + self.mesh_to_rod_pos
 
-    def _from_mesh_to_world_frame(self, body_name='rod_contact'):         
-            body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, body_name)
-            body_pos = self.data.xpos[body_id]
-            body_quat = self.data.xquat[body_id]
+        # Then, transform from rod frame to world frame
+        particles_world_frame = np.zeros_like(particles_rod_frame)
+        for i, particle in enumerate(particles_rod_frame):
+            mujoco.mj_local2Global(self.model, self.data, 
+                                   particles_world_frame[i], None, 
+                                   particle, None, 
+                                   self.rod_body_id, 0)
 
-            body_rot_matrix = mujoco.mju_quat2mat(body_quat)
-            particles_world_frame = np.dot(self.particles_mesh_frame, body_rot_matrix.T) + body_pos
-            return particles_world_frame
-
+        return particles_world_frame
+    
     def run_motion_model(self):
         points_new = np.zeros((self.nop, 3))
         indices_new = np.zeros(self.nop, dtype=int)
@@ -123,7 +136,7 @@ class ContactParticleFilter:
         else:
             self.run_motion_model()
 
-        particles_world_frame = self._from_mesh_to_world_frame() # TODO: Check if this is correct
+        particles_world_frame = self.from_mesh_to_world_frame() # TODO: Check if this is correct
         
         Xt_bar = self.run_measurement_model(gamma_t, particles_world_frame, current_time)
 
