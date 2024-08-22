@@ -113,8 +113,8 @@ class ContactParticleFilter:
         X_t_bar = []
         for i in range(self.nop):
             r_t = particles_world_frame[i]
-            weight = self._compute_likelihood(gamma_t, r_t)
-            X_t_bar.append((r_t, weight))        
+
+            # X_t_bar.append((r_t, weight))        
 
     def set_particles_to_zero(self):
         self.particles_mesh_frame = np.zeros((self.nop,3))
