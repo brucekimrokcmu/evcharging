@@ -75,6 +75,7 @@ class ResidualObserver:
 
         return alpha
 
+    # TODO: Look into MuJoCo's API on derivative funcs
     def _finite_difference_partial_M_qi(self, i, eps=1e-6):
         q = self.data.qpos.copy()
         M_pos = np.zeros((self.num_joints, self.num_joints))
