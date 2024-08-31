@@ -51,7 +51,8 @@ class ResidualObserver:
             return self.residual, self.integral
 
 
-        tau = self.data.qfrc_actuator
+        # tau = self.data.qfrc_actuator  
+        tau = self.data.actuator_force
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
@@ -66,14 +67,31 @@ class ResidualObserver:
         """
         alpha_i = g_i(q) - (1/2)q̇^T @ (∂M(q)/∂(q_i)) @ q̇, i = 1, 2, ... , n
         """
-        alpha = self.data.qfrc_bias
+        alpha = np.zeros(self.num_joints)
+        q = self.data.qpos
+        g = self._compute_gravity_term()
         dq = self.data.qvel
 
         for i in range(self.num_joints):
             dM_dqi = self._finite_difference_partial_M_qi(i)
-            alpha[i] -= 0.5 * dq.T @ dM_dqi @ dq
-
+            alpha[i] = g[i] - 0.5 * dq.T @ dM_dqi @ dq
+            
         return alpha
+
+    def _compute_gravity_term(self):
+        g = np.zeros(self.model.nv)
+        gravity = self.model.opt.gravity
+
+        jacp = np.zeros((3, self.model.nv))  # For translational Jacobian
+        jacr = np.zeros((3, self.model.nv))  # For rotational Jacobian (unused)
+        
+        for i in range(1, self.model.nbody):  # Start from 1 to skip the world body
+            mass = self.model.body_mass[i]
+            mujoco.mj_jacBodyCom(self.model, self.data, jacp, jacr, i)
+            force = mass * gravity
+            g += jacp.T @ force
+
+        return g
 
     # TODO: Look into MuJoCo's API on derivative funcs
     def _finite_difference_partial_M_qi(self, i, eps=1e-6):

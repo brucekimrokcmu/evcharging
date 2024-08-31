@@ -17,8 +17,11 @@ def main():
 
     controller = UR10eController(physics, config_path)
     
-    start_pose = get_random_pose()
-    target_pose = get_random_pose()
+    # start_pose = get_random_pose()
+    # target_pose = get_random_pose()
+    start_pose = np.array([0.4, -0.2, 0.5, 0.707, 0.0, 0.707, 0.0])
+    target_pose = np.array([0.6, 0.2, 0.5, 0.707, 0.0, 0.0, 0.707])
+
     controller.init_pose(start_pose)
     
     duration = 5.0

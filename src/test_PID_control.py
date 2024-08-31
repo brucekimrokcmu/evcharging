@@ -5,6 +5,7 @@ from trajectory_generator import generate_trajectory, get_random_pose
 from visualization import Visualization
 from residual_observer import ResidualObserver
 from dm_control import mujoco as dm_mujoco
+import numpy as np
 
 def main():
     curr_dir = os.path.dirname(os.path.abspath(__file__))
@@ -15,10 +16,13 @@ def main():
 
     controller = UR10eController(physics, config_path)
     
-    start_pose = get_random_pose()
+    # start_pose = get_random_pose()
+    # TODO: set a fixed start pose (p, q) 
+    start_pose = np.array([0.4, -0.2, 0.5, 0.707, 0.0, 0.707, 0.0])
     controller.init_pose(start_pose)
-
-    target_pose = get_random_pose()
+    # TODO: set a fixed end pose (p, q)
+    # target_pose = get_random_pose()
+    target_pose = np.array([0.6, 0.2, 0.5, 0.707, 0.0, 0.0, 0.707])
 
     duration = 5.0
     joint_trajectory = generate_trajectory(
