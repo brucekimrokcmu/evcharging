@@ -1,6 +1,6 @@
 {
     "step_size": 0.01,
-    "diagonal_gain": 2.0,
+    "diagonal_gain": 0.05,
     "kp": 150.0,
     "ki": 13.0,
     "kd": 0.8,

@@ -98,7 +98,7 @@ class ResidualObserver:
         """Define the dynamics of the residual observer."""
         integral, residual = np.split(x, 2)
         d_integral = alpha - tau - residual
-        d_residual = self.gain_matrix @ (integral + p) # TODO: check integral sign
+        d_residual = self.gain_matrix @ (integral + p) 
         return np.concatenate([d_integral, d_residual])
 
     def reset(self):
@@ -109,34 +109,27 @@ class ResidualObserver:
 
     def _compute_alpha(self):
         """
-        alpha_i = g_i(q) - (1/2)q̇^T @ (∂M(q)/∂(q_i)) @ q̇, i = 1, 2, ... , n
+        Compute alpha based on the equation:
+        αi = gi(q) - 0.5 * q̇^T * (∂M(q)/∂qi) * q̇
         """
         alpha = np.zeros(self.num_joints)
-        q = self.data.qpos
         g = self._compute_gravity_term()
         dq = self.data.qvel
 
         for i in range(self.num_joints):
             dM_dqi = self._finite_difference_partial_M_qi(i)
-            alpha[i] = g[i] - 0.5 * dq.T @ dM_dqi @ dq
-            
+            # alpha[i] = g[i] - 0.5 * dq.T @ dM_dqi @ dq
+            alpha[i] = self.data.qfrc_bias[i] - 0.5 * dq.T @ dM_dqi @ dq
+            # alpha[i] = self.data.qfrc_bias[i] + g[i] - 0.5 * dq.T @ dM_dqi @ dq
         return alpha
 
     def _compute_gravity_term(self):
+        """Compute the gravity term g(q)"""
         g = np.zeros(self.model.nv)
-        gravity = self.model.opt.gravity
-
-        jacp = np.zeros((3, self.model.nv))  # For translational Jacobian
-        jacr = np.zeros((3, self.model.nv))  # For rotational Jacobian (unused)
-        
-        for i in range(1, self.model.nbody):  # Start from 1 to skip the world body
-            mass = self.model.body_mass[i]
-            mujoco.mj_jacBodyCom(self.model, self.data, jacp, jacr, i)
-            force = mass * gravity
-            g += jacp.T @ force
-
+        mujoco.mj_forward(self.model, self.data)
+        mujoco.mj_contactForce(self.model, self.data, 0, g)
         return g
-
+    
     # TODO: Look into MuJoCo's API on derivative funcs
     def _finite_difference_partial_M_qi(self, i, eps=1e-6):
         q = self.data.qpos.copy()
