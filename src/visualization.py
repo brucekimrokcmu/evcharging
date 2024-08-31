@@ -180,6 +180,7 @@ class Visualization:
         qvel_data = []
         external_data = []
         residual_data = []
+        integral_data = []
 
         with mujoco.viewer.launch_passive(
             controller.model, controller.data, show_left_ui=False, show_right_ui=False
@@ -191,6 +192,7 @@ class Visualization:
             viewer.cam.lookat = [0.0, 0.0, 0.5]
 
             start_time = time.time()
+            sim_time = 0
             step = 0
             last_update_time = start_time
 
@@ -204,42 +206,30 @@ class Visualization:
                         actual_qpos = controller.data.qpos
                         torques = controller.compute_pid_torques(desired_qpos, actual_qpos)
                         controller.data.ctrl = torques
-
-                        controller.forward()
-                        controller.step()
-
-                        residual, _ = observer.get_residual(controller.get_time())
-
-                        # print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
-
+                        
+                        # Step the simulation
+                        mujoco.mj_step(controller.model, controller.data)
+                        sim_time += controller.model.opt.timestep
+                        
+                        # Update the observer
+                        residual, integral = observer.get_residual(sim_time)
+                        
                         ctrl = controller.data.ctrl.copy()
                         qvel = controller.data.qvel.copy()
-
-                        # external_wo_actuator = controller.data.qfrc_inverse - controller.data.qfrc_actuator 
-                        external_wo_actuator = controller.data.qfrc_constraint # + controller.data.qfrc_smooth 
-                        # external_wo_actuator = controller.data.qfrc_actuator
-
-                        time_steps.append(elapsed_time)
+                        external_wo_actuator = controller.data.qfrc_constraint
+                        
+                        time_steps.append(sim_time)
                         ctrl_data.append(ctrl)
                         qvel_data.append(qvel)
                         residual_data.append(residual)
+                        integral_data.append(integral)
                         external_data.append(external_wo_actuator)
 
-
-                        # print(f"End effector position: {controller.get_end_effector_position()}")
-                        # print(f"Control signals (data.ctrl): {ctrl}")
-                        
-                        """
-                        # TODO:  qfrc_external = qfrc_inverse - qfrc_applied - jac_xfrc - qfrc_actuator
-                        data.joint("my_joint").qfrc_constraint + data.joint("my_joint").qfrc_smooth
-                        """
-
-                        print(f"External force:  {external_wo_actuator}")
-                        # print(f"Joint velocities (qvel): {qvel}")
-                        # print(f"qfrc_actuator: {controller.data.qfrc_actuator}")
-                        print(f"Residual: {residual}")
-                        # print("---")                        
                         step += 1
+
+                        # Print progress every 100 steps
+                        if step % 100 == 0:
+                            print(f"Step: {step}/{num_steps}, Sim Time: {sim_time:.3f}")
 
                 # Update the viewer
                 if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
@@ -252,6 +242,7 @@ class Visualization:
                     time.sleep(time_to_sleep)
 
         print("Visualization complete.")
+        
         # Plot the residual and external constraint force for each joint
         num_joints = controller.model.nv
         fig, axs = plt.subplots(num_joints, 2, figsize=(18, 6 * num_joints))

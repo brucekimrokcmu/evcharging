@@ -17,51 +17,95 @@ class ResidualObserver:
         self.step_count = 0
         self._initialize_residual_observer()
 
+    # def _initialize_residual_observer(self):
+    #     self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints)) 
+    #     self.residual = np.zeros(self.num_joints)
+    #     self.integral = np.zeros(self.num_joints)
+    #     self.prev_time = 0
+    
     def _initialize_residual_observer(self):
         self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints)) 
-        self.residual = np.zeros(self.num_joints)
-        self.integral = np.zeros(self.num_joints)
-        self.prev_time = 0
-    
+        self.x = np.zeros(2 * self.num_joints)  # [integral, residual]
+        self.start_time = None
+        self.prev_time = None
+
+    # def get_residual(self, current_time):
+    #     """
+    #     Estimate external torques using residual observer method.
+    #     Requires only proprioceptive measures (q, q_dot) and current commanded input u.
+
+    #     r(t) = KI (p - integral_0_t(Btau + C^T(q,v)v + r(s))ds).
+
+    #     p_dot = tau + tau_ext - alpha(q, q_dot)
+    #     r = K[p + integral(alpha - tau - r)dt]
+
+    #     This method should be called at each timestep of the simulation.
+
+    #     Args:
+    #         current_time (float): The current simulation time.
+
+    #     Returns:
+    #         tuple: A tuple containing:
+    #             - residual (np.array): The estimated external torque.
+    #             - integral (np.array): The current integral value.
+
+    #     """
+    #     dt = current_time - self.prev_time
+    #     if dt <= 0:
+    #         return self.residual, self.integral
+
+    #     tau = self.data.actuator_force
+    #     alpha = self._compute_alpha()
+    #     p = self._compute_generalized_momentum()
+
+    #     self.integral += (alpha - tau - self.residual) * dt
+    #     self.residual = self.gain_matrix @ (self.integral - p)
+    #     self.prev_time = current_time
+
+    #     return self.residual, self.integral
+
     def get_residual(self, current_time):
         """
-        Estimate external torques using residual observer method.
-        Requires only proprioceptive measures (q, q_dot) and current commanded input u.
-
-        r(t) = KI (p - integral_0_t(Btau + C^T(q,v)v + r(s))ds).
-
-        for coriolis term, I referred to below equations
-
-        p_dot = tau + tau_ext - alpha(q, q_dot)
-        r = K[p + integral(alpha - tau - r)dt]
-
-        This method should be called at each timestep of the simulation.
-
-        Args:
-            current_time (float): The current simulation time.
-
-        Returns:
-            tuple: A tuple containing:
-                - residual (np.array): The estimated external torque.
-                - integral (np.array): The current integral value.
-
+        Estimate external torques using residual observer method without applying forces.
         """
+        if self.start_time is None:
+            self.start_time = current_time
+            self.prev_time = current_time
+            return self.x[self.num_joints:], self.x[:self.num_joints]
+
         dt = current_time - self.prev_time
         if dt <= 0:
-            return self.residual, self.integral
+            return self.x[self.num_joints:], self.x[:self.num_joints]
 
-
-        # tau = self.data.qfrc_actuator  
+        # Compute required quantities
         tau = self.data.actuator_force
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
-        self.integral += (alpha - tau - self.residual) * dt
+        # Compute observer dynamics
+        dx = self._observer_dynamics(current_time, self.x, p, tau, alpha)
 
-        self.residual = self.gain_matrix @ (p - self.integral)
+        # Update observer state using simple Euler integration
+        # This is now done locally without modifying MuJoCo's state
+        self.x += dx * dt
+
         self.prev_time = current_time
 
-        return self.residual, self.integral
+        return self.x[self.num_joints:], self.x[:self.num_joints]  # [residual, integral]
+
+
+    def _observer_dynamics(self, t, x, p, tau, alpha):
+        """Define the dynamics of the residual observer."""
+        integral, residual = np.split(x, 2)
+        d_integral = alpha - tau - residual
+        d_residual = self.gain_matrix @ (integral + p) # TODO: check integral sign
+        return np.concatenate([d_integral, d_residual])
+
+    def reset(self):
+        """Reset the observer state."""
+        self.x = np.zeros(2 * self.num_joints)
+        self.start_time = None
+        self.prev_time = None
 
     def _compute_alpha(self):
         """
