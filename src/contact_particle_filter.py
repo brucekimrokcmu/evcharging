@@ -6,12 +6,16 @@ import trimesh
 from residual_observer import ResidualObserver
 from scipy.spatial.transform import Rotation as R
 import osqp
+import xml.etree.ElementTree as ET
 
 class ContactParticleFilter:
     def __init__(self, physics, config_path):
         self._initialize_from_config(physics, config_path)
         self._setup_mesh()
-        self._setup_transforms()
+        #TODO: FIX the hard coded xml_path here
+        xml_path = "/home/brucekimrok/RoboticsProjects/evcharging_ws/data/universal_robots_ur10e/ur10e.xml"
+        self._parse_mesh_transform(xml_path)
+        # self._setup_transforms()
         self._setup_residual_observer()
         self._setup_friction_cone()
         self._initialize_particles()
@@ -34,14 +38,33 @@ class ContactParticleFilter:
         self.mesh = trimesh.load(mesh_path)
         self.face_normals = self.mesh.face_normals.copy()
 
-    def _setup_transforms(self):
-        self.rod_body_id = self.model.body_name2id('wrist_3_link')
-        self.mesh_to_rod_pos = np.array([0, 0.27, 0])
-        self.mesh_to_rod_rot = R.from_quat([1, 1, 0, 0]).as_matrix()
+    # def _setup_transforms(self):
+    #     self.rod_body_id = self.model.body_name2id('wrist_3_link')
+    #     self.mesh_to_rod_pos = np.array([0, 0.27, 0])
+    #     self.mesh_to_rod_rot = R.from_quat([1, 1, 0, 0]).as_matrix()
+
+    def _parse_mesh_transform(self, xml_path):
+        tree = ET.parse(xml_path)
+        root = tree.getroot()
+        
+        # Find the mesh element within the wrist_3_link
+        mesh_elem = root.find(".//body[@name='wrist_3_link']/geom[@type='mesh']")
+        
+        if mesh_elem is not None:
+            pos = mesh_elem.get('pos')
+            quat = mesh_elem.get('quat')
+            
+            if pos:
+                self.mesh_to_rod_pos = np.array([float(x) for x in pos.split()])
+            if quat:
+                self.mesh_to_rod_rot = R.from_quat([float(x) for x in quat.split()]).as_matrix()
+        else:
+            print("Mesh element not found in XML. Using default values.")
 
     def _setup_residual_observer(self):
         self.residual = ResidualObserver(self.physics, self.config)
-        self.Sigma_meas = np.eye(6)
+        nv = self.physics.model.nv
+        self.Sigma_meas = np.eye(nv) * self.config["convariance_standard_deviation"]
         self.Sigma_meas_inv = np.linalg.inv(self.Sigma_meas)
 
     def _setup_friction_cone(self):
@@ -50,8 +73,8 @@ class ContactParticleFilter:
 
     def _initialize_particles(self):
         self.has_contact = False
-        self.particles_mesh_frame = np.zeros((self.nop, 3))
-        self.indices_mesh_frame = np.zeros(self.nop, dtype=int)
+        self.particles_mesh_frame = np.empty((self.nop, 3))
+        self.indices_mesh_frame = np.empty(self.nop, dtype=int)
 
     def _compute_friction_cone_vectors(self):
         mu = self.friction_coefficient
@@ -74,12 +97,27 @@ class ContactParticleFilter:
     def sample_particles_on_meshes(self):
         self.particles_mesh_frame, self.indices_mesh_frame = self.mesh.sample(self.nop, return_index=True)
 
+    # def from_mesh_to_world_frame(self):
+    #     particles_rod_frame = np.dot(self.particles_mesh_frame, self.mesh_to_rod_rot.T) + self.mesh_to_rod_pos
+    #     particles_world_frame = np.zeros_like(particles_rod_frame)
+    #     for i, particle in enumerate(particles_rod_frame):
+    #         mujoco.mj_local2Global(self.model, self.data, particles_world_frame[i], None, 
+    #                                particle, None, self.rod_body_id, 0)
+    #     return particles_world_frame
+
     def from_mesh_to_world_frame(self):
-        particles_rod_frame = np.dot(self.particles_mesh_frame, self.mesh_to_rod_rot.T) + self.mesh_to_rod_pos
-        particles_world_frame = np.zeros_like(particles_rod_frame)
-        for i, particle in enumerate(particles_rod_frame):
-            mujoco.mj_local2Global(self.model, self.data, particles_world_frame[i], None, 
-                                   particle, None, self.rod_body_id, 0)
+        particles_world_frame = np.zeros_like(self.particles_mesh_frame)
+        for i, particle in enumerate(self.particles_mesh_frame):
+            # First, transform from mesh frame to rod frame
+            particle_rod = mujoco.mj_local2Local(self.model, self.data, 
+                                                particle, self.mesh_to_rod_pos, self.mesh_to_rod_rot, 
+                                                np.zeros(3), np.eye(3), self.rod_body_id)
+            
+            # Then, transform from rod frame to world frame
+            mujoco.mj_local2Global(self.model, self.data, 
+                                particles_world_frame[i], None,
+                                particle_rod, None, 
+                                self.rod_body_id, 0)
         return particles_world_frame
 
     def run_motion_model(self):
@@ -117,7 +155,7 @@ class ContactParticleFilter:
     def run_measurement_model(self, gamma_t, particles_world_frame):
         X_t_bar = []
         for r_t in particles_world_frame:
-            J_r = np.zeros((6, self.model.nv))
+            J_r = np.zeros((6, self.model.nv)) # TODO: Let's assume there is no moment for the contact 
             mujoco.mj_jac(self.model, self.data, J_r[:3], J_r[3:], r_t, self.rod_body_id)
             qp_result = self._solve_qp(gamma_t, J_r)
             prob = np.exp(-0.5 * qp_result)
@@ -141,10 +179,12 @@ class ContactParticleFilter:
 
     def run_contact_particle_filter(self, current_time):
         gamma_t, _ = self.residual.get_residual(current_time) 
+        e_t = gamma_t.T @ self.Sigma_meas_inv @ gamma_t
 
-        if gamma_t.T @ self.Sigma_meas_inv @ gamma_t < self.contact_thres:
+        if e_t < self.contact_thres:
             self.particles_mesh_frame = np.zeros((self.nop, 3))
-            return None
+            self.has_contact = False
+            return self.particles_mesh_frame
 
         if not self.has_contact:
             self.sample_particles_on_meshes()
@@ -159,3 +199,8 @@ class ContactParticleFilter:
     def importance_resample(self, Xt_bar):
         # Implement importance resampling here
         pass
+
+    def get_contact_points(self):
+        particles_rod_frame = np.dot(self.particles_mesh_frame, self.mesh_to_rod_rot.T) + self.mesh_to_rod_pos
+        particles_world_frame = self.from_mesh_to_world_frame()
+        return particles_rod_frame, particles_world_frame
