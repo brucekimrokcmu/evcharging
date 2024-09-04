@@ -1,5 +1,6 @@
 import json
 import mujoco 
+import os
 import numpy as np
 
 class ResidualObserver:
@@ -8,154 +9,105 @@ class ResidualObserver:
         self.model = self.physics.model.ptr
         self.data = self.physics.data.ptr
         self.num_joints = self.model.nv
+        self._load_config(config_path)
+        self._initialize_observer()
 
-        # Load the configuration file
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
-        
+    def _load_config(self, config):
+        if isinstance(config, dict):
+            self.config = config
+        elif isinstance(config, (str, os.PathLike)):
+            with open(config, 'r') as f:
+                self.config = json.load(f)
+        else:
+            raise TypeError("config must be either a dictionary or a path to a JSON file")
         self.step_size = self.config['step_size']
-        self.step_count = 0
-        self._initialize_residual_observer()
+        self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints))
 
-    # def _initialize_residual_observer(self):
-    #     self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints)) 
-    #     self.residual = np.zeros(self.num_joints)
-    #     self.integral = np.zeros(self.num_joints)
-    #     self.prev_time = 0
-    
-    def _initialize_residual_observer(self):
-        self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints)) 
+    def _initialize_observer(self):
         self.x = np.zeros(2 * self.num_joints)  # [integral, residual]
         self.start_time = None
         self.prev_time = None
 
-    # def get_residual(self, current_time):
-    #     """
-    #     Estimate external torques using residual observer method.
-    #     Requires only proprioceptive measures (q, q_dot) and current commanded input u.
-
-    #     r(t) = KI (p - integral_0_t(Btau + C^T(q,v)v + r(s))ds).
-
-    #     p_dot = tau + tau_ext - alpha(q, q_dot)
-    #     r = K[p + integral(alpha - tau - r)dt]
-
-    #     This method should be called at each timestep of the simulation.
-
-    #     Args:
-    #         current_time (float): The current simulation time.
-
-    #     Returns:
-    #         tuple: A tuple containing:
-    #             - residual (np.array): The estimated external torque.
-    #             - integral (np.array): The current integral value.
-
-    #     """
-    #     dt = current_time - self.prev_time
-    #     if dt <= 0:
-    #         return self.residual, self.integral
-
-    #     tau = self.data.actuator_force
-    #     alpha = self._compute_alpha()
-    #     p = self._compute_generalized_momentum()
-
-    #     self.integral += (alpha - tau - self.residual) * dt
-    #     self.residual = self.gain_matrix @ (self.integral - p)
-    #     self.prev_time = current_time
-
-    #     return self.residual, self.integral
-
     def get_residual(self, current_time):
-        """
-        Estimate external torques using residual observer method without applying forces.
-        """
-        if self.start_time is None:
-            self.start_time = current_time
-            self.prev_time = current_time
+        if not self._is_initialized(current_time):
             return self.x[self.num_joints:], self.x[:self.num_joints]
 
         dt = current_time - self.prev_time
         if dt <= 0:
             return self.x[self.num_joints:], self.x[:self.num_joints]
 
-        # Compute required quantities
         tau = self.data.actuator_force
         alpha = self._compute_alpha()
         p = self._compute_generalized_momentum()
 
-        # Compute observer dynamics
-        dx = self._observer_dynamics(current_time, self.x, p, tau, alpha)
-
-        # Update observer state using simple Euler integration
-        # This is now done locally without modifying MuJoCo's state
+        dx = self._observer_dynamics(self.x, p, tau, alpha)
         self.x += dx * dt
-
         self.prev_time = current_time
 
         return self.x[self.num_joints:], self.x[:self.num_joints]  # [residual, integral]
 
+    def _is_initialized(self, current_time):
+        if self.start_time is None:
+            self.start_time = current_time
+            self.prev_time = current_time
+            return False
+        return True
 
-    def _observer_dynamics(self, t, x, p, tau, alpha):
-        """Define the dynamics of the residual observer."""
+    def _observer_dynamics(self, x, p, tau, alpha):
         integral, residual = np.split(x, 2)
         d_integral = alpha - tau - residual
         d_residual = self.gain_matrix @ (integral + p) 
         return np.concatenate([d_integral, d_residual])
 
     def reset(self):
-        """Reset the observer state."""
-        self.x = np.zeros(2 * self.num_joints)
-        self.start_time = None
-        self.prev_time = None
+        self._initialize_observer()
 
     def _compute_alpha(self):
-        """
-        Compute alpha based on the equation:
-        αi = gi(q) - 0.5 * q̇^T * (∂M(q)/∂qi) * q̇
-        """
         alpha = np.zeros(self.num_joints)
-        g = self._compute_gravity_term()
         dq = self.data.qvel
+        dM_dq = self._finite_difference_partial_M()
 
         for i in range(self.num_joints):
-            dM_dqi = self._finite_difference_partial_M_qi(i)
-            # alpha[i] = g[i] - 0.5 * dq.T @ dM_dqi @ dq
-            alpha[i] = self.data.qfrc_bias[i] - 0.5 * dq.T @ dM_dqi @ dq
-            # alpha[i] = self.data.qfrc_bias[i] + g[i] - 0.5 * dq.T @ dM_dqi @ dq
+            alpha[i] = self.data.qfrc_bias[i] - 0.5 * dq.T @ dM_dq[i] @ dq
+
         return alpha
 
-    def _compute_gravity_term(self):
-        """Compute the gravity term g(q)"""
-        g = np.zeros(self.model.nv)
-        mujoco.mj_forward(self.model, self.data)
-        mujoco.mj_contactForce(self.model, self.data, 0, g)
-        return g
-    
-    # TODO: Look into MuJoCo's API on derivative funcs
-    def _finite_difference_partial_M_qi(self, i, eps=1e-6):
+    def _finite_difference_partial_M(self, eps=1e-6):
         q = self.data.qpos.copy()
-        M_pos = np.zeros((self.num_joints, self.num_joints))
-        M_neg = np.zeros((self.num_joints, self.num_joints))
+        dM_dq = np.zeros((self.num_joints, self.num_joints, self.num_joints))
 
-        q[i] += eps
-        mujoco.mj_setState(self.model, self.data, np.array(q).reshape(-1, 1), mujoco.mjtState.mjSTATE_QPOS)
-        mujoco.mj_forward(self.model, self.data)
-        mujoco.mj_fullM(self.model, M_pos, self.data.qM)
-        
-        q[i] -= 2 * eps
-        mujoco.mj_setState(self.model, self.data, np.array(q).reshape(-1, 1), mujoco.mjtState.mjSTATE_QPOS)
-        mujoco.mj_forward(self.model, self.data)
-        mujoco.mj_fullM(self.model, M_neg, self.data.qM)
-        
-        q[i] += eps
+        # Compute M at the current configuration
+        M_current = np.zeros((self.num_joints, self.num_joints))
+        mujoco.mj_fullM(self.model, M_current, self.data.qM)
+
+        # Compute M for positive and negative perturbations
+        for i in range(self.num_joints):
+            q[i] += eps
+            self._set_state(q)
+            M_pos = np.zeros((self.num_joints, self.num_joints))
+            mujoco.mj_fullM(self.model, M_pos, self.data.qM)
+            
+            q[i] -= 2 * eps
+            self._set_state(q)
+            M_neg = np.zeros((self.num_joints, self.num_joints))
+            mujoco.mj_fullM(self.model, M_neg, self.data.qM)
+            
+            dM_dq[i] = (M_pos - M_neg) / (2 * eps)
+            
+            # Reset q[i]
+            q[i] += eps
+
+        # Reset to original state
+        self._set_state(q)
+
+        return dM_dq
+
+    def _set_state(self, q):
         mujoco.mj_setState(self.model, self.data, np.array(q).reshape(-1, 1), mujoco.mjtState.mjSTATE_QPOS)
         mujoco.mj_forward(self.model, self.data)
 
-        dM_dqi = (M_pos - M_neg) / (2 * eps)
-        
-        return dM_dqi
 
     def _compute_generalized_momentum(self):        
         momentum = np.zeros(self.num_joints)
         mujoco.mj_mulM(self.model, self.data, momentum, self.data.qvel)
-
         return momentum
