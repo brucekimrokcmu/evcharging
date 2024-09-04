@@ -4,6 +4,7 @@ import mujoco
 import numpy as np
 import trimesh
 from residual_observer import ResidualObserver
+from scipy import sparse
 from scipy.spatial.transform import Rotation as R
 import osqp
 import xml.etree.ElementTree as ET
@@ -13,27 +14,35 @@ class ContactParticleFilter:
         self.physics = physics
         self.model = self.physics.model.ptr
         self.data = self.physics.data.ptr
+        self.base_path = os.path.dirname(os.path.dirname(config_path))
+        self.mesh_path = os.path.join(self.base_path, 'data', 'universal_robots_ur10e', 'assets', 'rod.obj')
+        self.xml_path = os.path.join(self.base_path, 'data', 'universal_robots_ur10e', 'ur10e.xml')
+
         self._load_config(config_path)
         self._setup_mesh()
         self._parse_mesh_transform()
         self._setup_residual_observer()
         self._setup_friction_cone()
         self._initialize_particles()
+        self._setup_osqp_solver()  
 
-    def _load_config(self, config_path):
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
+    def _load_config(self, config):
+        if isinstance(config, dict):
+            self.config = config
+        elif isinstance(config, (str, os.PathLike)):
+            with open(config, 'r') as f:
+                self.config = json.load(f)
+        else:
+            raise TypeError("config must be either a dictionary or a path to a JSON file")
+        
         self.nop = self.config['number_of_particles']
         self.friction_coefficient = self.config["friction_coefficient"]
         self.contact_thres = self.config['contact_thres']
         self.n_friction_vectors = self.config.get('friction_cone_vectors', 5)
-        self.rod_body_id = self.model.body_name2id('wrist_3_link')
-        
-        # Add base paths for mesh and XML
-        self.base_path = os.path.dirname(os.path.dirname(config_path))
-        self.mesh_path = os.path.join(self.base_path, 'data', 'universal_robots_ur10e', 'assets', 'rod.obj')
-        self.xml_path = os.path.join(self.base_path, 'data', 'universal_robots_ur10e', 'ur10e.xml')
-
+        self.rod_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'wrist_3_link')
+        if self.rod_body_id == -1:
+            raise ValueError("Body 'wrist_3_link' not found in the model")
+ 
     def _setup_mesh(self):
         if not os.path.exists(self.mesh_path):
             raise FileNotFoundError(f"Mesh file not found: {self.mesh_path}")
@@ -87,10 +96,14 @@ class ContactParticleFilter:
 
     def _setup_osqp_solver(self):
         n = self.n_friction_vectors
-        solver = osqp.OSQP()
-        solver.setup(P=np.eye(n), q=np.zeros(n), A=np.eye(n), 
-                     l=np.zeros(n), u=np.inf*np.ones(n), verbose=False)
-        return solver
+        P = sparse.csc_matrix((n, n))
+        A = sparse.csc_matrix((6, n))
+        q = np.zeros(n)
+        l = -np.inf * np.ones(6)
+        u = np.zeros(6)
+
+        self.osqp_solver = osqp.OSQP()
+        self.osqp_solver.setup(P=P, q=q, A=A, l=l, u=u, verbose=False)
 
     def sample_particles_on_meshes(self):
         self.particles_mesh_frame, self.indices_mesh_frame = self.mesh.sample(self.nop, return_index=True)
@@ -98,23 +111,32 @@ class ContactParticleFilter:
     def _from_mesh_to_world_frame(self):
         particles_world_frame = np.zeros_like(self.particles_mesh_frame)
         for i, particle in enumerate(self.particles_mesh_frame):
-            particle_rod = mujoco.mj_local2Local(self.model, self.data, 
-                                                particle, self.mesh_to_rod_pos, self.mesh_to_rod_rot, 
-                                                np.zeros(3), np.eye(3), self.rod_body_id)
-            
-            mujoco.mj_local2Global(self.model, self.data, 
-                                   particles_world_frame[i], None,
-                                   particle_rod, None, 
-                                   self.rod_body_id, 0)
+            particle_rod = self.mesh_to_rod_rot @ particle + self.mesh_to_rod_pos
+            xpos = np.zeros(3)
+            xmat = np.zeros(9)
+            mujoco.mj_local2Global(self.data, 
+                                xpos, xmat,
+                                particle_rod, 
+                                np.array([1, 0, 0, 0]),  # Identity quaternion
+                                self.rod_body_id, 0)
+            particles_world_frame[i] = xpos
         return particles_world_frame
 
     def _from_world_to_mesh_frame(self, particles_world_frame):
         particles_mesh_frame = np.zeros_like(particles_world_frame)
         for i, particle in enumerate(particles_world_frame):
-            particle_rod = np.zeros(3)
-            mujoco.mj_global2Local(self.model, self.data, particle_rod, None, particle, None, self.rod_body_id)
-            particles_mesh_frame[i] = np.dot(particle_rod - self.mesh_to_rod_pos, self.mesh_to_rod_rot)
+            # Get the rod's position and orientation in world frame
+            rod_pos = self.data.xpos[self.rod_body_id]
+            rod_mat = self.data.xmat[self.rod_body_id].reshape(3, 3)
+
+            # Transform from world to rod frame
+            particle_rod = rod_mat.T @ (particle - rod_pos)
+
+            # Transform from rod frame to mesh frame
+            particles_mesh_frame[i] = self.mesh_to_rod_rot.T @ (particle_rod - self.mesh_to_rod_pos)
+
         return particles_mesh_frame
+
 
     def run_motion_model(self):
         normals = self.face_normals[self.indices_mesh_frame]
@@ -153,9 +175,13 @@ class ContactParticleFilter:
         unnormalized_probs = []
         
         for r_t in particles_world_frame:
-            J_r = np.zeros((3, nv))
-            mujoco.mj_jac(self.model, self.data, J_r[:3], J_r[3:], r_t, self.rod_body_id)
-            
+            jacp = np.zeros((3, nv))
+            jacr = np.zeros((3, nv))
+    
+            mujoco.mj_jac(self.model, self.data, jacp, jacr, r_t, self.rod_body_id)
+
+            J_r = np.vstack((jacp, jacr))
+
             qp_result = self._solve_qp(gamma_t, J_r)
             unnormalized_prob = np.exp(-0.5 * qp_result)
             unnormalized_probs.append(unnormalized_prob)
@@ -172,22 +198,31 @@ class ContactParticleFilter:
 
     def _solve_qp(self, gamma, J_r):
         P = J_r.T @ self.Sigma_meas_inv @ J_r
-        q = -gamma.T @ self.Sigma_meas_inv @ J_r
+        q_ = -gamma.T @ self.Sigma_meas_inv @ J_r
         
         G = np.zeros((6, self.n_friction_vectors))
         G[:3] = -self.Fc_vectors
         G[3:] = -np.cross(self.Fc_vectors.T, np.array([1, 0, 0])).T
-        h = np.zeros(6)
+        h_ = np.zeros(6)
         
-        result = self.osqp_solver.solve(P, q, G, h)
+        # Convert to sparse matrices
+        P_sparse = sparse.csc_matrix(P)
+        A_sparse = sparse.csc_matrix(G)
         
-        if result.info.status != 'solved':
+        # Update problem data
+        
+        self.osqp_solver.update(P_sparse, q_, A_sparse, -np.inf * np.ones(6), h_)
+        # Solve the problem
+        results = self.osqp_solver.solve()
+        
+        if results.info.status != 'solved':
             return float('inf')
         
-        alpha = result.x
+        alpha = results.x
         Fc = np.zeros(6)
         Fc[:3] = self.Fc_vectors @ alpha
         Fc[3:] = np.cross(Fc[:3], np.array([1, 0, 0]))
+        
         return (gamma - J_r.T @ Fc).T @ self.Sigma_meas_inv @ (gamma - J_r.T @ Fc)
   
     def run_contact_particle_filter(self, current_time):
