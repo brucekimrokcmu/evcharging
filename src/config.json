@@ -6,7 +6,7 @@
     "kd": 0.8,
     "number_of_particles" : 50,
     "friction_coefficient" : 1.0,
-    "friction_cone_vectors": 4,
+    "friction_cone_vectors": 6,
     "contact_thres" : 5.0,
     "convariance_standard_deviation" : 0.1
 }

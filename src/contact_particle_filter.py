@@ -38,7 +38,7 @@ class ContactParticleFilter:
         self.nop = self.config['number_of_particles']
         self.friction_coefficient = self.config["friction_coefficient"]
         self.contact_thres = self.config['contact_thres']
-        self.n_friction_vectors = self.config.get('friction_cone_vectors', 5)
+        self.n_friction_vectors = self.config.get('friction_cone_vectors', 6)
         self.rod_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'wrist_3_link')
         if self.rod_body_id == -1:
             raise ValueError("Body 'wrist_3_link' not found in the model")
@@ -96,8 +96,9 @@ class ContactParticleFilter:
 
     def _setup_osqp_solver(self):
         n = self.n_friction_vectors
+        m = 6 # TODO: make it as config
         P = sparse.csc_matrix((n, n))
-        A = sparse.csc_matrix((6, n))
+        A = sparse.csc_matrix((m, n))
         q = np.zeros(n)
         l = -np.inf * np.ones(6)
         u = np.zeros(6)
@@ -205,13 +206,17 @@ class ContactParticleFilter:
         G[3:] = -np.cross(self.Fc_vectors.T, np.array([1, 0, 0])).T
         h_ = np.zeros(6)
         
-        # Convert to sparse matrices
         P_sparse = sparse.csc_matrix(P)
         A_sparse = sparse.csc_matrix(G)
+        q_ = np.array(q_).flatten()
+        # print("P_sparse type:", type(P_sparse))
+        # print("P_sparse shape:", P_sparse.shape)
+        # print("q_ type:", type(q_))
+        # print("q_ shape:", q_.shape)
+        # print("A_sparse type:", type(A_sparse))
+        # print("A_sparse shape:", A_sparse.shape)
         
-        # Update problem data
-        
-        self.osqp_solver.update(P_sparse, q_, A_sparse, -np.inf * np.ones(6), h_)
+        self.osqp_solver.update(q=q_, l=-np.inf * np.ones(6), u=h_, Px=P_sparse.data, Ax=A_sparse.data)
         # Solve the problem
         results = self.osqp_solver.solve()
         

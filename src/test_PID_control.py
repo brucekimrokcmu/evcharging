@@ -19,11 +19,9 @@ def main():
     # start_pose = get_random_pose()
     # TODO: set a fixed start pose (p, q) 
     start_pose = np.array([0.4, -0.2, 0.5, 0.707, 0.0, 0.707, 0.0])
-    controller.init_pose(start_pose)
-    # TODO: set a fixed end pose (p, q)
-    # target_pose = get_random_pose()
     target_pose = np.array([0.6, 0.2, 0.5, 0.707, 0.0, 0.0, 0.707])
-
+    controller.init_pose(start_pose)
+    # target_pose = get_random_pose()
     duration = 5.0
     joint_trajectory = generate_trajectory(
         controller.physics, start_pose, target_pose, num_waypoints=500, duration=duration

@@ -58,7 +58,7 @@ def test_measurement_model(cpf):
 
 def test_run_contact_particle_filter(cpf):
     print("\nTesting run_contact_particle_filter()...")
-    for t in range(10):  # Run for 10 time steps
+    for t in range(100):  # Run for 10 time steps
         result = cpf.run_contact_particle_filter(t)
         gamma_t, _ = cpf.residual.get_residual(t)
         e_t = gamma_t.T @ cpf.Sigma_meas_inv @ gamma_t
