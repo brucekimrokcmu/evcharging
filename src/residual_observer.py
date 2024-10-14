@@ -24,7 +24,7 @@ class ResidualObserver:
         self.gain_matrix = np.diag(self.config['diagonal_gain'] * np.ones(self.num_joints))
 
     def _initialize_observer(self):
-        self.x = np.zeros(2 * self.num_joints)  # [integral, residual]
+        self.x = np.zeros(2 * self.num_joints) 
         self.start_time = None
         self.prev_time = None
 
@@ -76,11 +76,9 @@ class ResidualObserver:
         q = self.data.qpos.copy()
         dM_dq = np.zeros((self.num_joints, self.num_joints, self.num_joints))
 
-        # Compute M at the current configuration
         M_current = np.zeros((self.num_joints, self.num_joints))
         mujoco.mj_fullM(self.model, M_current, self.data.qM)
 
-        # Compute M for positive and negative perturbations
         for i in range(self.num_joints):
             q[i] += eps
             self._set_state(q)
@@ -94,10 +92,8 @@ class ResidualObserver:
             
             dM_dq[i] = (M_pos - M_neg) / (2 * eps)
             
-            # Reset q[i]
             q[i] += eps
 
-        # Reset to original state
         self._set_state(q)
 
         return dM_dq

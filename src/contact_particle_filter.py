@@ -118,7 +118,7 @@ class ContactParticleFilter:
             mujoco.mj_local2Global(self.data, 
                                 xpos, xmat,
                                 particle_rod, 
-                                np.array([1, 0, 0, 0]),  # Identity quaternion
+                                np.array([1, 0, 0, 0])
                                 self.rod_body_id, 0)
             particles_world_frame[i] = xpos
         return particles_world_frame
@@ -126,7 +126,7 @@ class ContactParticleFilter:
     def _from_world_to_mesh_frame(self, particles_world_frame):
         particles_mesh_frame = np.zeros_like(particles_world_frame)
         for i, particle in enumerate(particles_world_frame):
-            # Get the rod's position and orientation in world frame
+
             rod_pos = self.data.xpos[self.rod_body_id]
             rod_mat = self.data.xmat[self.rod_body_id].reshape(3, 3)
 
@@ -209,15 +209,9 @@ class ContactParticleFilter:
         P_sparse = sparse.csc_matrix(P)
         A_sparse = sparse.csc_matrix(G)
         q_ = np.array(q_).flatten()
-        # print("P_sparse type:", type(P_sparse))
-        # print("P_sparse shape:", P_sparse.shape)
-        # print("q_ type:", type(q_))
-        # print("q_ shape:", q_.shape)
-        # print("A_sparse type:", type(A_sparse))
-        # print("A_sparse shape:", A_sparse.shape)
-        
+       
         self.osqp_solver.update(q=q_, l=-np.inf * np.ones(6), u=h_, Px=P_sparse.data, Ax=A_sparse.data)
-        # Solve the problem
+        
         results = self.osqp_solver.solve()
         
         if results.info.status != 'solved':

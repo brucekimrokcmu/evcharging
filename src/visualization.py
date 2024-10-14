@@ -34,10 +34,8 @@ class Visualization:
                         print(f"Step: {step}, End effector position: {controller.get_end_effector_position()}")
                         step += 1
 
-                    # Step the simulation
                         controller.step()
 
-                # Update the viewer
                 if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
                     viewer.sync()
                     last_update_time = current_time
@@ -119,7 +117,6 @@ class Visualization:
 
         print("Visualization complete.")
 
-        # Convert lists to numpy arrays for easier plotting
         time_points = np.array(time_points)
         desired_positions = np.array(desired_positions)
         actual_positions = np.array(actual_positions)
@@ -131,7 +128,6 @@ class Visualization:
         # Plot the results
         num_joints = desired_positions.shape[1]
         fig, axes = plt.subplots(3, 1, figsize=(12, 15), sharex=True)
-
         fig, ax = plt.subplots(figsize=(12, 8))
 
         # Control signals
@@ -207,11 +203,9 @@ class Visualization:
                         torques = controller.compute_pid_torques(desired_qpos, actual_qpos)
                         controller.data.ctrl = torques
                         
-                        # Step the simulation
                         mujoco.mj_step(controller.model, controller.data)
                         sim_time += controller.model.opt.timestep
                         
-                        # Update the observer
                         residual, integral = observer.get_residual(sim_time)
                         
                         ctrl = controller.data.ctrl.copy()
@@ -231,7 +225,6 @@ class Visualization:
                         if step % 100 == 0:
                             print(f"Step: {step}/{num_steps}, Sim Time: {sim_time:.3f}")
 
-                # Update the viewer
                 if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
                     viewer.sync()
                     last_update_time = current_time
