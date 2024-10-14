@@ -2,6 +2,7 @@ import time
 import mujoco.viewer
 import numpy as np
 import matplotlib.pyplot as plt
+from contact_particle_filter import ContactParticleFilter
 
 class Visualization:
     def __init__(self):
@@ -259,3 +260,110 @@ class Visualization:
 
         plt.tight_layout()
         plt.show()
+
+    def visualize_cpf(self, controller, joint_trajectory, cpf, duration=5.0):
+        if not isinstance(cpf, ContactParticleFilter):
+            raise TypeError("cpf must be an instance of ContactParticleFilter")
+        num_steps = joint_trajectory.shape[0]
+        step_duration = duration / num_steps
+        time_steps = []
+        contact_detected = []
+        num_particles = []
+        contact_positions = []
+        residual_magnitudes = []
+
+        with mujoco.viewer.launch_passive(
+            controller.model, controller.data, show_left_ui=False, show_right_ui=False
+        ) as viewer:
+            # Set camera configuration
+            viewer.cam.azimuth = 89.83044433593757
+            viewer.cam.elevation = -45.0
+            viewer.cam.distance = 5.04038754800176
+            viewer.cam.lookat = [0.0, 0.0, 0.5]
+
+            start_time = time.time()
+            sim_time = 0
+            step = 0
+            last_update_time = start_time
+
+            while viewer.is_running() and step < num_steps:
+                current_time = time.time()
+                elapsed_time = current_time - start_time
+
+                if elapsed_time >= step * step_duration:
+                    if step < num_steps:
+                        desired_qpos = joint_trajectory[step]
+                        controller.set_joint_positions(desired_qpos)
+                        mujoco.mj_step(controller.model, controller.data)
+
+                        sim_time += controller.model.opt.timestep
+                        result = cpf.run_contact_particle_filter(sim_time)
+                        gamma_t, _ = cpf.residual.get_residual(sim_time)
+                        e_t = gamma_t.T @ cpf.Sigma_meas_inv @ gamma_t
+
+                        time_steps.append(sim_time)
+                        contact_detected.append(cpf.has_contact)
+                        num_particles.append(result.shape[0])
+                        residual_magnitudes.append(e_t)
+
+                        if cpf.has_contact:
+                            contact_positions.append(np.mean(result, axis=0))
+                        else:
+                            contact_positions.append(np.array([np.nan, np.nan, np.nan]))
+
+                        step += 1
+
+                        # Print progress every 100 steps
+                        if step % 100 == 0:
+                            print(f"Step: {step}/{num_steps}, Sim Time: {sim_time:.3f}")
+
+                if current_time - last_update_time >= 1/60:  # Cap at 60 FPS
+                    viewer.sync()
+                    last_update_time = current_time
+
+                # Sleep to maintain real-time simulation
+                time_to_sleep = (start_time + step * step_duration) - time.time()
+                if time_to_sleep > 0:
+                    time.sleep(time_to_sleep)
+
+        print("Visualization complete.")
+
+        # Plot the results
+        fig, axs = plt.subplots(4, 1, figsize=(12, 20))
+
+        # Plot contact detection
+        axs[0].plot(time_steps, contact_detected)
+        axs[0].set_xlabel('Time (s)')
+        axs[0].set_ylabel('Contact Detected')
+        axs[0].set_title('Contact Detection over Time')
+        axs[0].grid()
+
+        # Plot number of particles
+        axs[1].plot(time_steps, num_particles)
+        axs[1].set_xlabel('Time (s)')
+        axs[1].set_ylabel('Number of Particles')
+        axs[1].set_title('Number of Particles over Time')
+        axs[1].grid()
+
+        # Plot contact positions
+        contact_positions = np.array(contact_positions)
+        axs[2].plot(time_steps, contact_positions[:, 0], label='X')
+        axs[2].plot(time_steps, contact_positions[:, 1], label='Y')
+        axs[2].plot(time_steps, contact_positions[:, 2], label='Z')
+        axs[2].set_xlabel('Time (s)')
+        axs[2].set_ylabel('Position')
+        axs[2].set_title('Contact Position over Time')
+        axs[2].legend()
+        axs[2].grid()
+
+        # Plot residual magnitudes
+        axs[3].plot(time_steps, residual_magnitudes)
+        axs[3].set_xlabel('Time (s)')
+        axs[3].set_ylabel('Residual Magnitude')
+        axs[3].set_title('Residual Magnitude over Time')
+        axs[3].grid()
+
+        plt.tight_layout()
+        plt.show()
+
+        return time_steps, contact_detected, num_particles, contact_positions, residual_magnitudes

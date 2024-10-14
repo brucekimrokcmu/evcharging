@@ -15,8 +15,8 @@ class ContactParticleFilter:
         self.model = self.physics.model.ptr
         self.data = self.physics.data.ptr
         self.base_path = os.path.dirname(os.path.dirname(config_path))
-        self.mesh_path = os.path.join(self.base_path, 'data', 'universal_robots_ur10e', 'assets', 'rod.obj')
-        self.xml_path = os.path.join(self.base_path, 'data', 'universal_robots_ur10e', 'ur10e.xml')
+        self.mesh_path = os.path.join(self.base_path, '../data', 'universal_robots_ur10e', 'assets', 'rod.obj')
+        self.xml_path = os.path.join(self.base_path, '../data', 'universal_robots_ur10e', 'ur10e.xml')
 
         self._load_config(config_path)
         self._setup_mesh()
@@ -118,7 +118,7 @@ class ContactParticleFilter:
             mujoco.mj_local2Global(self.data, 
                                 xpos, xmat,
                                 particle_rod, 
-                                np.array([1, 0, 0, 0])
+                                np.array([1, 0, 0, 0]),
                                 self.rod_body_id, 0)
             particles_world_frame[i] = xpos
         return particles_world_frame
@@ -225,6 +225,9 @@ class ContactParticleFilter:
         return (gamma - J_r.T @ Fc).T @ self.Sigma_meas_inv @ (gamma - J_r.T @ Fc)
   
     def run_contact_particle_filter(self, current_time):
+        
+        # TODO: Implement low pass filter
+
         gamma_t, _ = self.residual.get_residual(current_time) 
         e_t = gamma_t.T @ self.Sigma_meas_inv @ gamma_t
 

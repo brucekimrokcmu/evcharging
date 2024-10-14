@@ -1,4 +1,7 @@
-numpy
-dm_control
 mujoco
-glfw
+dm_control
+numpy
+trimesh
+scipy
+osqp
+matplotlib
